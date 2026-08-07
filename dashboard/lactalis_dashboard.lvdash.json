@@ -1,0 +1,950 @@
+{
+  "datasets": [
+    {
+      "name": "orders_agg",
+      "displayName": "Orders Analytics",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      segment_label,\n",
+        "      brand,\n",
+        "      category,\n",
+        "      channel,\n",
+        "      DATE_TRUNC('MONTH', order_date) as order_month,\n",
+        "      SUM(line_revenue) as total_revenue,\n",
+        "      COUNT(DISTINCT order_id) as order_count,\n",
+        "      SUM(quantity) as total_quantity,\n",
+        "      COUNT(DISTINCT customer_id) as customer_count\n",
+        "    FROM lactalis_catalog.reco.vw_orders_enriched\n",
+        "    GROUP BY segment_label, brand, category, channel, DATE_TRUNC('MONTH', order_date)\n",
+        "    "
+      ]
+    },
+    {
+      "name": "kpi_totals",
+      "displayName": "KPI Totals",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      SUM(line_revenue) as total_revenue,\n",
+        "      COUNT(*) as order_line_count,\n",
+        "      COUNT(DISTINCT customer_id) as active_customers\n",
+        "    FROM lactalis_catalog.reco.vw_orders_enriched\n",
+        "    "
+      ]
+    },
+    {
+      "name": "reco_by_trigger",
+      "displayName": "Recommendations by Trigger",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      trigger_signal,\n",
+        "      reco_type,\n",
+        "      COUNT(*) as reco_count\n",
+        "    FROM lactalis_catalog.reco.reco_candidates\n",
+        "    GROUP BY trigger_signal, reco_type\n",
+        "    "
+      ]
+    },
+    {
+      "name": "reco_summary",
+      "displayName": "Recommendation Summary",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      COUNT(*) as total_recommendations,\n",
+        "      COUNT(DISTINCT customer_id) as reco_customers,\n",
+        "      SUM(CASE WHEN in_stock THEN 1 ELSE 0 END) as in_stock_count\n",
+        "    FROM lactalis_catalog.reco.reco_candidates rc\n",
+        "    LEFT JOIN lactalis_catalog.reco.stock_by_dc sdc \n",
+        "      ON rc.product_id = sdc.product_id\n",
+        "    "
+      ]
+    },
+    {
+      "name": "fulfilment_rate",
+      "displayName": "Fulfilment Stats",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      COUNT(CASE WHEN in_stock THEN 1 END) as in_stock_count,\n",
+        "      COUNT(*) as total_products_dcs\n",
+        "    FROM lactalis_catalog.reco.stock_by_dc\n",
+        "    "
+      ]
+    },
+    {
+      "name": "out_of_stock",
+      "displayName": "Out of Stock Products",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      sdc.dc_id,\n",
+        "      dp.product_name,\n",
+        "      COUNT(*) as count\n",
+        "    FROM lactalis_catalog.reco.stock_by_dc sdc\n",
+        "    LEFT JOIN lactalis_catalog.reco.dim_dc dd ON sdc.dc_id = dd.dc_id\n",
+        "    LEFT JOIN lactalis_catalog.reco.dim_product dp ON sdc.product_id = dp.product_id\n",
+        "    WHERE sdc.in_stock = false\n",
+        "    GROUP BY sdc.dc_id, dp.product_name\n",
+        "    LIMIT 10\n",
+        "    "
+      ]
+    },
+    {
+      "name": "revenue_by_segment",
+      "displayName": "Revenue by Segment",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      segment_label,\n",
+        "      SUM(line_revenue) as segment_revenue\n",
+        "    FROM lactalis_catalog.reco.vw_orders_enriched\n",
+        "    GROUP BY segment_label\n",
+        "    ORDER BY segment_revenue DESC\n",
+        "    "
+      ]
+    },
+    {
+      "name": "revenue_by_brand",
+      "displayName": "Revenue by Brand",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      brand,\n",
+        "      SUM(line_revenue) as brand_revenue\n",
+        "    FROM lactalis_catalog.reco.vw_orders_enriched\n",
+        "    GROUP BY brand\n",
+        "    ORDER BY brand_revenue DESC\n",
+        "    "
+      ]
+    },
+    {
+      "name": "category_mix",
+      "displayName": "Category Mix",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      category,\n",
+        "      COUNT(*) as category_count\n",
+        "    FROM lactalis_catalog.reco.vw_orders_enriched\n",
+        "    GROUP BY category\n",
+        "    "
+      ]
+    },
+    {
+      "name": "reco_by_type_segment",
+      "displayName": "Recommendations by Type and Segment",
+      "queryLines": [
+        "\n",
+        "    SELECT \n",
+        "      rc.reco_type,\n",
+        "      oe.segment_label,\n",
+        "      COUNT(*) as reco_count\n",
+        "    FROM lactalis_catalog.reco.reco_candidates rc\n",
+        "    JOIN lactalis_catalog.reco.vw_orders_enriched oe ON rc.customer_id = oe.customer_id\n",
+        "    GROUP BY rc.reco_type, oe.segment_label\n",
+        "    "
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "67ccd033",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Lactalis Recommendation Engine Performance"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "subtitle",
+            "multilineTextboxSpec": {
+              "lines": [
+                "AI-driven B2B personalized recommendations analytics and performance metrics"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "56cf4ccd",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "sum(total_revenue)",
+                      "expression": "SUM(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_revenue)",
+                  "displayName": "Total Revenue (AUD)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Revenue (AUD)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "167cd6e9",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "sum(order_line_count)",
+                      "expression": "SUM(`order_line_count`)"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(order_line_count)",
+                  "displayName": "Order Lines"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Order Lines"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "99316e9b",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "sum(active_customers)",
+                      "expression": "SUM(`active_customers`)"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(active_customers)",
+                  "displayName": "Active Customers"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Active Customers"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "279c8928",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "reco_summary",
+                  "fields": [
+                    {
+                      "name": "sum(total_recommendations)",
+                      "expression": "SUM(`total_recommendations`)"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_recommendations)",
+                  "displayName": "Recommendations Surfaced"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Recommendations Surfaced"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "fulfil_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "fulfilment_rate",
+                  "fields": [
+                    {
+                      "name": "fulfilment_pct",
+                      "expression": "CAST(COUNT(CASE WHEN in_stock THEN 1 END) AS DOUBLE) / COUNT(*)"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "fulfilment_pct",
+                  "displayName": "Fulfilment Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Fulfilment Rate (%)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 5,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "cef4965b",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "reco_by_trigger",
+                  "fields": [
+                    {
+                      "name": "sum(reco_count)",
+                      "expression": "SUM(`reco_count`)"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(reco_count)",
+                  "displayName": "Total Reco Triggers"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Reco Triggers"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 5,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "section_revenue",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Revenue Analytics"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "8adc09d9",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_by_segment",
+                  "fields": [
+                    {
+                      "name": "segment_label",
+                      "expression": "`segment_label`"
+                    },
+                    {
+                      "name": "sum(segment_revenue)",
+                      "expression": "SUM(`segment_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "segment_label",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  },
+                  "displayName": "segment_label"
+                },
+                "y": {
+                  "fieldName": "sum(segment_revenue)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "SUM of segment_revenue"
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Segment"
+              },
+              "mark": {
+                "colors": [
+                  "#FFAB00",
+                  "#00A972",
+                  "#FF3621",
+                  "#8BCAE7",
+                  "#AB4057",
+                  "#99DDB4",
+                  "#FCA4A1",
+                  "#919191",
+                  "#BF7080"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "3592639e",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_by_brand",
+                  "fields": [
+                    {
+                      "name": "brand",
+                      "expression": "`brand`"
+                    },
+                    {
+                      "name": "sum(brand_revenue)",
+                      "expression": "SUM(`brand_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "brand",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  },
+                  "displayName": "brand"
+                },
+                "y": {
+                  "fieldName": "sum(brand_revenue)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "SUM of brand_revenue"
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Brand"
+              },
+              "mark": {
+                "colors": [
+                  "#FFAB00",
+                  "#00A972",
+                  "#FF3621",
+                  "#8BCAE7",
+                  "#AB4057",
+                  "#99DDB4",
+                  "#FCA4A1",
+                  "#919191",
+                  "#BF7080"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 9,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "b0679d49",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "category_mix",
+                  "fields": [
+                    {
+                      "name": "sum(category_count)",
+                      "expression": "SUM(`category_count`)"
+                    },
+                    {
+                      "name": "category",
+                      "expression": "`category`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(category_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "SUM of category_count"
+                },
+                "color": {
+                  "fieldName": "category",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "category"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Category Distribution"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "revenue_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "orders_agg",
+                  "fields": [
+                    {
+                      "name": "order_month",
+                      "expression": "`order_month`"
+                    },
+                    {
+                      "name": "sum(total_revenue)",
+                      "expression": "SUM(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Month"
+                },
+                "y": {
+                  "fieldName": "sum(total_revenue)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Revenue (AUD)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue Trend by Month"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 14,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "section_reco",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Recommendations Performance"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 19,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "64b1a019",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "reco_by_trigger",
+                  "fields": [
+                    {
+                      "name": "trigger_signal",
+                      "expression": "`trigger_signal`"
+                    },
+                    {
+                      "name": "sum(reco_count)",
+                      "expression": "SUM(`reco_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "trigger_signal",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  },
+                  "displayName": "trigger_signal"
+                },
+                "y": {
+                  "fieldName": "sum(reco_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "SUM of reco_count"
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Recommendations by Trigger Signal"
+              },
+              "mark": {
+                "colors": [
+                  "#FFAB00",
+                  "#00A972",
+                  "#FF3621",
+                  "#8BCAE7",
+                  "#AB4057",
+                  "#99DDB4",
+                  "#FCA4A1",
+                  "#919191",
+                  "#BF7080"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "reco_type_segment",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "reco_by_type_segment",
+                  "fields": [
+                    {
+                      "name": "reco_type",
+                      "expression": "`reco_type`"
+                    },
+                    {
+                      "name": "segment_label",
+                      "expression": "`segment_label`"
+                    },
+                    {
+                      "name": "sum(reco_count)",
+                      "expression": "SUM(`reco_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "reco_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Recommendation Type"
+                },
+                "y": {
+                  "fieldName": "sum(reco_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count"
+                },
+                "color": {
+                  "fieldName": "segment_label",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Segment"
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Recommendations by Type and Segment"
+              },
+              "mark": {
+                "colors": [
+                  "#004B85",
+                  "#5BC5F2",
+                  "#E8C759",
+                  "#FF6B6B",
+                  "#4ECDC4",
+                  "#45B7D1"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 20,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "section_guardrails",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Guardrails & Fulfillment"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 25,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "out_of_stock_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "out_of_stock",
+                  "fields": [
+                    {
+                      "name": "dc_id",
+                      "expression": "`dc_id`"
+                    },
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "count",
+                      "expression": "`count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "dc_id",
+                    "displayName": "Distribution Center"
+                  },
+                  {
+                    "fieldName": "product_name",
+                    "displayName": "Product"
+                  },
+                  {
+                    "fieldName": "count",
+                    "displayName": "Count"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Out-of-Stock Guardrail (Sample)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 26,
+            "width": 6,
+            "height": 4
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}

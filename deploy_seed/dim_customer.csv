@@ -1,0 +1,81 @@
+customer_id,customer_name,segment,segment_label,dc_id,dc_name,region,city,profile_note,account_tier,source_system
+CUST-0001,BP Fortitude Valley,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Single-serve, impulse buys, fuel-price sensitive",Silver,Salesforce
+CUST-0002,Caltex Surfers Paradise,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Surfers Paradise,"Single-serve, impulse buys, fuel-price sensitive",Silver,SAP
+CUST-0003,Shell Fortitude Valley,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Single-serve, impulse buys, fuel-price sensitive",Silver,Salesforce
+CUST-0004,Ampol Ipswich,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Ipswich,"Single-serve, impulse buys, fuel-price sensitive",Silver,SAP
+CUST-0005,7-Eleven Toowong,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Toowong,"Single-serve, impulse buys, fuel-price sensitive",Silver,Salesforce
+CUST-0006,United Petroleum Ipswich,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Ipswich,"Single-serve, impulse buys, fuel-price sensitive",Silver,Salesforce
+CUST-0007,Mobil Ipswich,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Ipswich,"Single-serve, impulse buys, fuel-price sensitive",Gold,SAP
+CUST-0008,Metro Petroleum Fortitude Valley,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Single-serve, impulse buys, fuel-price sensitive",Gold,Salesforce
+CUST-0009,EG Fuel Toowong,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Toowong,"Single-serve, impulse buys, fuel-price sensitive",Bronze,SAP
+CUST-0010,OTR Surfers Paradise,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Surfers Paradise,"Single-serve, impulse buys, fuel-price sensitive",Bronze,SAP
+CUST-0011,BP Gold Coast,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Gold Coast,"Single-serve, impulse buys, fuel-price sensitive",Bronze,SAP
+CUST-0012,Caltex Surfers Paradise 2,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Surfers Paradise,"Single-serve, impulse buys, fuel-price sensitive",Bronze,SAP
+CUST-0013,Shell Gold Coast,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Gold Coast,"Single-serve, impulse buys, fuel-price sensitive",Bronze,Salesforce
+CUST-0014,Ampol Surfers Paradise,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Surfers Paradise,"Single-serve, impulse buys, fuel-price sensitive",Silver,Salesforce
+CUST-0015,7-Eleven Surfers Paradise,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Surfers Paradise,"Single-serve, impulse buys, fuel-price sensitive",Gold,SAP
+CUST-0016,United Petroleum Fortitude Valley,P&C,Petrol & Convenience,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Single-serve, impulse buys, fuel-price sensitive",Silver,SAP
+CUST-0017,Milano Ristorante Geelong,RESTAURANT,Restaurants & Cafes,DC-003,Ballarat Distribution Center,VIC,Geelong,"Chef-driven, cooking cream & specialty items",Bronze,SAP
+CUST-0018,The Tapas Place Subiaco,RESTAURANT,Restaurants & Cafes,DC-005,Perth Distribution Center,WA,Subiaco,"Chef-driven, cooking cream & specialty items",Bronze,Salesforce
+CUST-0019,Aromas Cafe Richmond,RESTAURANT,Restaurants & Cafes,DC-003,Ballarat Distribution Center,VIC,Richmond,"Chef-driven, cooking cream & specialty items",Bronze,SAP
+CUST-0020,Chef & Co Kitchen Ipswich,RESTAURANT,Restaurants & Cafes,DC-001,Brisbane Distribution Center,QLD,Ipswich,"Chef-driven, cooking cream & specialty items",Silver,Salesforce
+CUST-0021,Bella Vista Trattoria Brisbane,RESTAURANT,Restaurants & Cafes,DC-001,Brisbane Distribution Center,QLD,Brisbane,"Chef-driven, cooking cream & specialty items",Silver,SAP
+CUST-0022,Harbourside Grill St Kilda,RESTAURANT,Restaurants & Cafes,DC-003,Ballarat Distribution Center,VIC,St Kilda,"Chef-driven, cooking cream & specialty items",Silver,SAP
+CUST-0023,The Copper Pot St Kilda,RESTAURANT,Restaurants & Cafes,DC-003,Ballarat Distribution Center,VIC,St Kilda,"Chef-driven, cooking cream & specialty items",Silver,SAP
+CUST-0024,Saffron Dining Geelong,RESTAURANT,Restaurants & Cafes,DC-003,Ballarat Distribution Center,VIC,Geelong,"Chef-driven, cooking cream & specialty items",Silver,SAP
+CUST-0025,Olive & Vine Newcastle,RESTAURANT,Restaurants & Cafes,DC-002,Sydney Distribution Center,NSW,Newcastle,"Chef-driven, cooking cream & specialty items",Gold,Salesforce
+CUST-0026,Corner Bistro Fremantle,RESTAURANT,Restaurants & Cafes,DC-005,Perth Distribution Center,WA,Fremantle,"Chef-driven, cooking cream & specialty items",Silver,SAP
+CUST-0027,Milano Ristorante Geelong 2,RESTAURANT,Restaurants & Cafes,DC-003,Ballarat Distribution Center,VIC,Geelong,"Chef-driven, cooking cream & specialty items",Gold,SAP
+CUST-0028,The Tapas Place Glenelg,RESTAURANT,Restaurants & Cafes,DC-004,Adelaide Distribution Center,SA,Glenelg,"Chef-driven, cooking cream & specialty items",Silver,Salesforce
+CUST-0029,Aromas Cafe Brisbane,RESTAURANT,Restaurants & Cafes,DC-001,Brisbane Distribution Center,QLD,Brisbane,"Chef-driven, cooking cream & specialty items",Silver,SAP
+CUST-0030,Chef & Co Kitchen Bondi Junction,RESTAURANT,Restaurants & Cafes,DC-002,Sydney Distribution Center,NSW,Bondi Junction,"Chef-driven, cooking cream & specialty items",Silver,Salesforce
+CUST-0031,Bella Vista Trattoria Gold Coast,RESTAURANT,Restaurants & Cafes,DC-001,Brisbane Distribution Center,QLD,Gold Coast,"Chef-driven, cooking cream & specialty items",Gold,SAP
+CUST-0032,Harbourside Grill Norwood,RESTAURANT,Restaurants & Cafes,DC-004,Adelaide Distribution Center,SA,Norwood,"Chef-driven, cooking cream & specialty items",Silver,Salesforce
+CUST-0033,St Aidans College Glenelg,INSTITUTION,Schools/Hospitals/Aged Care,DC-004,Adelaide Distribution Center,SA,Glenelg,"Nutritionist-driven, compliance-focused",Silver,SAP
+CUST-0034,Princess Mary Hospital Fortitude Valley,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Nutritionist-driven, compliance-focused",Bronze,SAP
+CUST-0035,Sunny Meadows Aged Care Brisbane,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Brisbane,"Nutritionist-driven, compliance-focused",Silver,SAP
+CUST-0036,Riverside Primary Adelaide,INSTITUTION,Schools/Hospitals/Aged Care,DC-004,Adelaide Distribution Center,SA,Adelaide,"Nutritionist-driven, compliance-focused",Gold,Salesforce
+CUST-0037,Mercy Health Kitchen Fortitude Valley,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Nutritionist-driven, compliance-focused",Silver,Salesforce
+CUST-0038,Grace Aged Care Toowong,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Toowong,"Nutritionist-driven, compliance-focused",Silver,Salesforce
+CUST-0039,Holy Cross College Adelaide,INSTITUTION,Schools/Hospitals/Aged Care,DC-004,Adelaide Distribution Center,SA,Adelaide,"Nutritionist-driven, compliance-focused",Silver,SAP
+CUST-0040,Wattle Grove School Brisbane,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Brisbane,"Nutritionist-driven, compliance-focused",Silver,Salesforce
+CUST-0041,St Vincents Care Richmond,INSTITUTION,Schools/Hospitals/Aged Care,DC-003,Ballarat Distribution Center,VIC,Richmond,"Nutritionist-driven, compliance-focused",Gold,SAP
+CUST-0042,Northside Hospital Sydney,INSTITUTION,Schools/Hospitals/Aged Care,DC-002,Sydney Distribution Center,NSW,Sydney,"Nutritionist-driven, compliance-focused",Gold,Salesforce
+CUST-0043,St Aidans College Ipswich,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Ipswich,"Nutritionist-driven, compliance-focused",Silver,Salesforce
+CUST-0044,Princess Mary Hospital Newcastle,INSTITUTION,Schools/Hospitals/Aged Care,DC-002,Sydney Distribution Center,NSW,Newcastle,"Nutritionist-driven, compliance-focused",Bronze,SAP
+CUST-0045,Sunny Meadows Aged Care Fortitude Valley,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Nutritionist-driven, compliance-focused",Bronze,Salesforce
+CUST-0046,Riverside Primary Geelong,INSTITUTION,Schools/Hospitals/Aged Care,DC-003,Ballarat Distribution Center,VIC,Geelong,"Nutritionist-driven, compliance-focused",Silver,SAP
+CUST-0047,Mercy Health Kitchen Fortitude Valley 2,INSTITUTION,Schools/Hospitals/Aged Care,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,"Nutritionist-driven, compliance-focused",Bronze,SAP
+CUST-0048,Grace Aged Care Norwood,INSTITUTION,Schools/Hospitals/Aged Care,DC-004,Adelaide Distribution Center,SA,Norwood,"Nutritionist-driven, compliance-focused",Gold,Salesforce
+CUST-0049,Crust & Crumb Bakery Norwood,BAKERY,Bakeries,DC-004,Adelaide Distribution Center,SA,Norwood,"Bulk ingredients, cream & butter",Bronze,SAP
+CUST-0050,Local Loaves Co Prospect,BAKERY,Bakeries,DC-004,Adelaide Distribution Center,SA,Prospect,"Bulk ingredients, cream & butter",Silver,Salesforce
+CUST-0051,The French Bakehouse Newcastle,BAKERY,Bakeries,DC-002,Sydney Distribution Center,NSW,Newcastle,"Bulk ingredients, cream & butter",Bronze,Salesforce
+CUST-0052,Artisan Bakes Parramatta,BAKERY,Bakeries,DC-002,Sydney Distribution Center,NSW,Parramatta,"Bulk ingredients, cream & butter",Silver,SAP
+CUST-0053,Golden Crust Adelaide,BAKERY,Bakeries,DC-004,Adelaide Distribution Center,SA,Adelaide,"Bulk ingredients, cream & butter",Silver,Salesforce
+CUST-0054,Bakers Dozen Ballarat,BAKERY,Bakeries,DC-003,Ballarat Distribution Center,VIC,Ballarat,"Bulk ingredients, cream & butter",Gold,SAP
+CUST-0055,Rustic Rise Bakery Gold Coast,BAKERY,Bakeries,DC-001,Brisbane Distribution Center,QLD,Gold Coast,"Bulk ingredients, cream & butter",Bronze,Salesforce
+CUST-0056,Sourdough & Co Parramatta,BAKERY,Bakeries,DC-002,Sydney Distribution Center,NSW,Parramatta,"Bulk ingredients, cream & butter",Gold,Salesforce
+CUST-0057,Flour Power Adelaide,BAKERY,Bakeries,DC-004,Adelaide Distribution Center,SA,Adelaide,"Bulk ingredients, cream & butter",Silver,Salesforce
+CUST-0058,Daily Bread Co Newcastle,BAKERY,Bakeries,DC-002,Sydney Distribution Center,NSW,Newcastle,"Bulk ingredients, cream & butter",Bronze,Salesforce
+CUST-0059,Crust & Crumb Bakery Joondalup,BAKERY,Bakeries,DC-005,Perth Distribution Center,WA,Joondalup,"Bulk ingredients, cream & butter",Silver,Salesforce
+CUST-0060,Local Loaves Co Surfers Paradise,BAKERY,Bakeries,DC-001,Brisbane Distribution Center,QLD,Surfers Paradise,"Bulk ingredients, cream & butter",Silver,Salesforce
+CUST-0061,The French Bakehouse Perth,BAKERY,Bakeries,DC-005,Perth Distribution Center,WA,Perth,"Bulk ingredients, cream & butter",Bronze,Salesforce
+CUST-0062,Artisan Bakes Richmond,BAKERY,Bakeries,DC-003,Ballarat Distribution Center,VIC,Richmond,"Bulk ingredients, cream & butter",Silver,Salesforce
+CUST-0063,Golden Crust Toowong,BAKERY,Bakeries,DC-001,Brisbane Distribution Center,QLD,Toowong,"Bulk ingredients, cream & butter",Bronze,Salesforce
+CUST-0064,Bakers Dozen Glenelg,BAKERY,Bakeries,DC-004,Adelaide Distribution Center,SA,Glenelg,"Bulk ingredients, cream & butter",Bronze,SAP
+CUST-0065,FreshChoice IGA Fremantle,GROCER,Independent Grocers,DC-005,Perth Distribution Center,WA,Fremantle,Bulk + promotional add-ons,Bronze,Salesforce
+CUST-0066,Community Supermarket Fortitude Valley,GROCER,Independent Grocers,DC-001,Brisbane Distribution Center,QLD,Fortitude Valley,Bulk + promotional add-ons,Silver,Salesforce
+CUST-0067,Local Grocer Plus Melbourne,GROCER,Independent Grocers,DC-003,Ballarat Distribution Center,VIC,Melbourne,Bulk + promotional add-ons,Bronze,Salesforce
+CUST-0068,Corner Market IGA Richmond,GROCER,Independent Grocers,DC-003,Ballarat Distribution Center,VIC,Richmond,Bulk + promotional add-ons,Gold,Salesforce
+CUST-0069,Neighbourhood Grocer St Kilda,GROCER,Independent Grocers,DC-003,Ballarat Distribution Center,VIC,St Kilda,Bulk + promotional add-ons,Bronze,SAP
+CUST-0070,Value Foods IGA Joondalup,GROCER,Independent Grocers,DC-005,Perth Distribution Center,WA,Joondalup,Bulk + promotional add-ons,Gold,Salesforce
+CUST-0071,Harvest Market Norwood,GROCER,Independent Grocers,DC-004,Adelaide Distribution Center,SA,Norwood,Bulk + promotional add-ons,Silver,Salesforce
+CUST-0072,Township Grocers Norwood,GROCER,Independent Grocers,DC-004,Adelaide Distribution Center,SA,Norwood,Bulk + promotional add-ons,Bronze,Salesforce
+CUST-0073,MetroFresh IGA Geelong,GROCER,Independent Grocers,DC-003,Ballarat Distribution Center,VIC,Geelong,Bulk + promotional add-ons,Silver,Salesforce
+CUST-0074,Green Basket Glenelg,GROCER,Independent Grocers,DC-004,Adelaide Distribution Center,SA,Glenelg,Bulk + promotional add-ons,Bronze,Salesforce
+CUST-0075,FreshChoice IGA Richmond,GROCER,Independent Grocers,DC-003,Ballarat Distribution Center,VIC,Richmond,Bulk + promotional add-ons,Silver,SAP
+CUST-0076,Community Supermarket Brisbane,GROCER,Independent Grocers,DC-001,Brisbane Distribution Center,QLD,Brisbane,Bulk + promotional add-ons,Bronze,SAP
+CUST-0077,Local Grocer Plus Bondi Junction,GROCER,Independent Grocers,DC-002,Sydney Distribution Center,NSW,Bondi Junction,Bulk + promotional add-ons,Bronze,Salesforce
+CUST-0078,Corner Market IGA Ipswich,GROCER,Independent Grocers,DC-001,Brisbane Distribution Center,QLD,Ipswich,Bulk + promotional add-ons,Bronze,Salesforce
+CUST-0079,Neighbourhood Grocer Surfers Paradise,GROCER,Independent Grocers,DC-001,Brisbane Distribution Center,QLD,Surfers Paradise,Bulk + promotional add-ons,Bronze,Salesforce
+CUST-0080,Value Foods IGA Perth,GROCER,Independent Grocers,DC-005,Perth Distribution Center,WA,Perth,Bulk + promotional add-ons,Silver,SAP

@@ -1,0 +1,61 @@
+product_id,product_name,brand,category,pack_size,unit_price,is_flavored_milk,is_single_serve,is_cooking_cream,is_nutrition_compliant,is_hot_beverage,source_system
+SKU-0024,Siggi's Icelandic Skyr Plain 150g,Siggi's,Yogurt,150g,3.5,false,true,false,true,false,SAP
+SKU-0025,Siggi's Icelandic Skyr Vanilla 150g,Siggi's,Yogurt,150g,3.5,false,true,false,true,false,SAP
+SKU-0050,Siggi's Icelandic Skyr Blueberry 150g,Siggi's,Yogurt,150g,3.5,false,true,false,true,false,SAP
+SKU-0054,Siggi's Drinkable Yogurt 250ml,Siggi's,Yogurt,250ml,3.8,false,true,false,true,false,SAP
+SKU-0001,Pauls Full Cream Milk 2L,Pauls,Milk,2L,4.5,false,false,false,true,false,SAP
+SKU-0002,Pauls Lite White Milk 2L,Pauls,Milk,2L,4.8,false,false,false,true,false,SAP
+SKU-0003,Lactel Organic Full Cream Milk 1L,Lactel,Milk,1L,3.9,false,false,false,true,false,SAP
+SKU-0004,Pauls Ice Break Iced Coffee 500ml,Pauls,Flavored Milk,500ml,3.2,true,true,false,false,false,SAP
+SKU-0005,Pauls Ice Break Double Espresso 500ml,Pauls,Flavored Milk,500ml,3.4,true,true,false,false,false,SAP
+SKU-0006,Pauls Rush Strawberry 300ml,Pauls,Flavored Milk,300ml,2.2,true,true,false,false,false,SAP
+SKU-0007,Pauls Rush Chocolate 300ml,Pauls,Flavored Milk,300ml,2.2,true,true,false,false,false,SAP
+SKU-0008,Lactel Chocolate Milk 250ml,Lactel,Flavored Milk,250ml,2.1,true,true,false,false,false,SAP
+SKU-0009,Pauls Breaka Hot Chocolate Powder 1kg,Pauls,Hot Beverage,1kg,9.5,false,false,false,false,true,SAP
+SKU-0010,Lactel Drinking Chocolate 400g,Lactel,Hot Beverage,400g,5.8,false,false,false,false,true,SAP
+SKU-0011,Président Pure Cooking Cream 300ml,Président,Cream,300ml,3.2,false,false,true,false,false,SAP
+SKU-0012,Président Thickened Cream 500ml,Président,Cream,500ml,4.8,false,false,true,false,false,SAP
+SKU-0013,Lactel Cooking Cream 250ml,Lactel,Cream,250ml,2.9,false,false,true,false,false,SAP
+SKU-0014,Galbani Mascarpone 250g,Galbani,Cream,250g,5.5,false,false,true,false,false,SAP
+SKU-0015,Président Salted Butter 250g,Président,Butter,250g,6.5,false,false,false,false,false,SAP
+SKU-0016,Président Unsalted Butter 500g,Président,Butter,500g,12.0,false,false,false,false,false,SAP
+SKU-0017,Président Butter Portions 10g x100,Président,Butter,100x10g,18.0,false,false,false,false,false,SAP
+SKU-0018,Lactel Cultured Butter 250g,Lactel,Butter,250g,6.0,false,false,false,false,false,SAP
+SKU-0019,Président Camembert 200g,Président,Cheese,200g,8.5,false,false,false,false,false,SAP
+SKU-0020,Galbani Parmesan Wedge 500g,Galbani,Cheese,500g,14.0,false,false,false,false,false,SAP
+SKU-0021,Galbani Fresh Mozzarella 250g,Galbani,Cheese,250g,7.2,false,false,false,false,false,SAP
+SKU-0022,Galbani Ricotta 500g,Galbani,Cheese,500g,8.0,false,false,false,false,false,SAP
+SKU-0023,Lactel Tasty Cheese Block 1kg,Lactel,Cheese,1kg,13.5,false,false,false,false,false,SAP
+SKU-0026,Lactel Natural Yogurt 1kg,Lactel,Yogurt,1kg,6.2,false,false,false,true,false,SAP
+SKU-0027,Parmalat Kids Yogurt Pouch 4x70g,Parmalat,Yogurt,280g,4.2,false,false,false,true,false,SAP
+SKU-0028,Pauls Zymil Lactose Free Milk 2L,Pauls,Milk,2L,5.2,false,false,false,true,false,SAP
+SKU-0029,Parmalat UHT Full Cream Milk 1L,Parmalat,Milk,1L,2.3,false,false,false,true,false,SAP
+SKU-0030,Parmalat UHT Skim Milk 1L,Parmalat,Milk,1L,2.3,false,false,false,true,false,SAP
+SKU-0031,Pauls Smarter White Milk 3L,Pauls,Milk,3L,6.5,false,false,false,true,false,SAP
+SKU-0032,Lactel Lactose Free Milk 1L,Lactel,Milk,1L,3.6,false,false,false,true,false,SAP
+SKU-0033,Pauls Ice Break Iced Coffee 750ml,Pauls,Flavored Milk,750ml,4.5,true,true,false,false,false,SAP
+SKU-0034,Pauls Rush Banana 300ml,Pauls,Flavored Milk,300ml,2.2,true,true,false,false,false,SAP
+SKU-0035,Lactel Iced Latte 250ml,Lactel,Flavored Milk,250ml,2.3,true,true,false,false,false,SAP
+SKU-0036,Pauls Ice Break Caramel 500ml,Pauls,Flavored Milk,500ml,3.3,true,true,false,false,false,SAP
+SKU-0037,Lactel Strawberry Milk 600ml,Lactel,Flavored Milk,600ml,3.1,true,true,false,false,false,SAP
+SKU-0038,Pauls Chocolate Milk 2L,Pauls,Flavored Milk,2L,5.5,true,false,false,false,false,SAP
+SKU-0039,Lactel Mocha Iced Coffee 500ml,Lactel,Flavored Milk,500ml,3.2,true,true,false,false,false,SAP
+SKU-0040,Président Crème Fraîche 200g,Président,Cream,200g,4.9,false,false,true,false,false,SAP
+SKU-0041,Galbani Cooking Cream 500ml,Galbani,Cream,500ml,4.5,false,false,true,false,false,SAP
+SKU-0042,Pauls Thickened Cream 1L,Pauls,Cream,1L,7.2,false,false,true,false,false,SAP
+SKU-0043,Lactel Double Cream 300ml,Lactel,Cream,300ml,3.4,false,false,true,false,false,SAP
+SKU-0044,Président Brie 200g,Président,Cheese,200g,8.9,false,false,false,false,false,SAP
+SKU-0045,Galbani Bocconcini 200g,Galbani,Cheese,200g,6.5,false,false,false,false,false,SAP
+SKU-0046,Galbani Grana Padano 300g,Galbani,Cheese,300g,11.5,false,false,false,false,false,SAP
+SKU-0047,Lactel Shredded Pizza Cheese 1kg,Lactel,Cheese,1kg,12.8,false,false,false,false,false,SAP
+SKU-0048,Président Feta 200g,Président,Cheese,200g,6.2,false,false,false,false,false,SAP
+SKU-0049,Galbani Grated Parmesan 250g,Galbani,Cheese,250g,7.8,false,false,false,false,false,SAP
+SKU-0051,Lactel Greek Style Yogurt 500g,Lactel,Yogurt,500g,4.2,false,false,false,true,false,SAP
+SKU-0052,Lactel Vanilla Yogurt 4x150g,Lactel,Yogurt,600g,5.0,false,false,false,true,false,SAP
+SKU-0053,Parmalat Kids Yogurt Pouch Mango 4x70g,Parmalat,Yogurt,280g,4.2,false,false,false,true,false,SAP
+SKU-0055,Lactel Pot Set Yogurt 170g,Lactel,Yogurt,170g,1.9,false,true,false,true,false,SAP
+SKU-0056,Président Salted Butter 500g,Président,Butter,500g,11.5,false,false,false,false,false,SAP
+SKU-0057,Lactel Spreadable Butter 500g,Lactel,Butter,500g,7.5,false,false,false,false,false,SAP
+SKU-0058,Galbani Butter Unsalted 250g,Galbani,Butter,250g,5.2,false,false,false,false,false,SAP
+SKU-0059,Pauls Breaka Iced Coffee 250ml,Pauls,Flavored Milk,250ml,2.0,true,true,false,false,false,SAP
+SKU-0060,Lactel Hot Chocolate Sachets 10pk,Lactel,Hot Beverage,250g,4.5,false,false,false,false,true,SAP

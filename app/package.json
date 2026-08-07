@@ -1,0 +1,21 @@
+{
+  "name": "lactalis-reco-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lactalis B2B Personalized Recommendation Engine — dual-view Databricks App (MyLactalis storefront + Engine Console).",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev:server": "node --watch server/index.js",
+    "install:frontend": "npm --prefix frontend install",
+    "build:frontend": "npm --prefix frontend install && npm --prefix frontend run build",
+    "dev:frontend": "npm --prefix frontend run dev"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

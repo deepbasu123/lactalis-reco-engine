@@ -1,0 +1,23 @@
+# Node
+node_modules/
+npm-debug.log*
+.env
+.env.local
+
+# Build output is committed (frontend/dist) so the app deploys without a build step.
+# If you prefer to rebuild on deploy, uncomment:
+# app/frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local scratch / working files (not part of the shippable demo)
+_scratch/
+*.log
+DEMO_IDS.env
+
+# OS
+.DS_Store
