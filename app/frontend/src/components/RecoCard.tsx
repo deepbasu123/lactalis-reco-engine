@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Recommendation } from '../types';
 import { aud } from '../api';
 import { categoryTheme, brandMonogram } from './category';
+import { productImage } from './productImage';
 import { IconPlus, IconCheck, IconSun, IconClock } from './Icons';
 
 // "why now" chip icon by trigger signal.
@@ -13,18 +14,32 @@ function triggerIcon(signal?: string) {
 
 export function RecoCard({ rec, delay = 0 }: { rec: Recommendation; delay?: number }) {
   const [added, setAdded] = useState(false);
+  const [imgOk, setImgOk] = useState(true);
   const theme = categoryTheme(rec.category);
+  const label = rec.product_name || rec.product_id;
 
   return (
     <article className="reco reveal" style={{ animationDelay: `${delay}ms` }}>
       <span className="reco__rank" title={`Rank ${rec.rank}`}>
         {rec.rank}
       </span>
+      {/* Product image on the category tint. Falls back to the packaging monogram
+          if the bundled photo ever fails to load. */}
       <div className="reco__pack" style={{ background: theme.tint }}>
         <span className="reco__cap" style={{ background: theme.cap }} />
-        <span className="reco__mono" aria-hidden>
-          {brandMonogram(rec.brand)}
-        </span>
+        {imgOk ? (
+          <img
+            className="reco__img"
+            src={productImage(rec.product_name, rec.category)}
+            alt={label}
+            loading="lazy"
+            onError={() => setImgOk(false)}
+          />
+        ) : (
+          <span className="reco__mono" aria-hidden>
+            {brandMonogram(rec.brand)}
+          </span>
+        )}
       </div>
 
       <div className="reco__body">

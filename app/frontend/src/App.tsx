@@ -3,13 +3,15 @@ import { api } from './api';
 import type { AppConfig, Customer } from './types';
 import { Storefront } from './views/Storefront';
 import { Console } from './views/Console';
-import { IconStore, IconConsole } from './components/Icons';
+import { ArchitectureModal } from './components/ArchitectureModal';
+import { IconStore, IconConsole, IconLayers } from './components/Icons';
 
 type Mode = 'store' | 'console';
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('store');
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [archOpen, setArchOpen] = useState(false);
 
   // Customer list is loaded once and shared with the storefront (account switcher).
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -66,31 +68,38 @@ export default function App() {
         )}
       </main>
 
-      <footer style={{ borderTop: '1px solid var(--line)', background: '#fff' }}>
-        <div
-          className="wrap"
-          style={{
-            padding: '20px 32px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 16,
-            flexWrap: 'wrap',
-          }}
-        >
-          <span className="faint" style={{ fontSize: 12.5 }}>
-            Lactalis B2B Personalized Recommendation Engine · demo
-          </span>
-          <span className="poweredby">
-            <span className="dot" /> Powered by Databricks
+      <footer className="sitefoot">
+        <div className="wrap sitefoot__inner">
+          <div className="sitefoot__left">
+            <span className="faint" style={{ fontSize: 12.5 }}>
+              Lactalis B2B Personalized Recommendation Engine · demo
+            </span>
+            <span className="faint sitefoot__credit">Product imagery: Wikimedia Commons</span>
+          </div>
+
+          {/* App-wide trigger — opens the architecture overlay without navigating. */}
+          <button
+            className="archtrigger"
+            onClick={() => setArchOpen(true)}
+            aria-haspopup="dialog"
+          >
+            <span className="dot" />
+            <span className="archtrigger__label">
+              Powered by Databricks
+              <span className="archtrigger__cta">
+                <IconLayers size={13} /> see the architecture
+              </span>
+            </span>
             {config?.catalog && (
-              <span className="faint" style={{ marginLeft: 10 }}>
-                · {config.catalog}.{config.schema}
+              <span className="faint archtrigger__loc">
+                {config.catalog}.{config.schema}
               </span>
             )}
-          </span>
+          </button>
         </div>
       </footer>
+
+      <ArchitectureModal open={archOpen} onClose={() => setArchOpen(false)} />
     </>
   );
 }

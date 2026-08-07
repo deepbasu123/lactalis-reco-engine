@@ -378,3 +378,509 @@ a {
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+
+/* ============================ Site footer + arch trigger ================== */
+
+.sitefoot {
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+.sitefoot__inner {
+  padding: 18px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sitefoot__left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sitefoot__credit {
+  font-size: 11px;
+}
+
+/* The "Powered by Databricks — see the architecture" pill. Reads as a quiet
+   credit at rest; on hover it lifts and the gold "see the architecture" cue
+   brightens, inviting the click without competing with the storefront. */
+.archtrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #fff, #f7fafd);
+  border-radius: 999px;
+  padding: 8px 8px 8px 14px;
+  font-family: inherit;
+  color: var(--text-soft);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.archtrigger:hover {
+  border-color: var(--sky);
+  box-shadow: 0 8px 22px rgba(0, 75, 133, 0.12);
+  transform: translateY(-1px);
+}
+.archtrigger:focus-visible {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(0, 75, 133, 0.14);
+}
+.archtrigger .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky);
+  box-shadow: 0 0 0 3px rgba(91, 197, 242, 0.2);
+  flex-shrink: 0;
+}
+.archtrigger__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.archtrigger__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gold-deep);
+  background: linear-gradient(180deg, #fbf1cf, #f6e6a9);
+  border: 1px solid rgba(184, 145, 43, 0.35);
+  border-radius: 999px;
+  padding: 4px 10px;
+  letter-spacing: 0.01em;
+  transition: filter 0.2s var(--ease);
+}
+.archtrigger:hover .archtrigger__cta {
+  filter: brightness(1.03) saturate(1.1);
+}
+.archtrigger__loc {
+  font-size: 11px;
+  padding-right: 6px;
+}
+@media (max-width: 620px) {
+  .archtrigger__loc {
+    display: none;
+  }
+}
+
+/* ============================ Architecture modal ========================= */
+
+.archmodal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 5vh 20px;
+  overflow-y: auto;
+  background: rgba(8, 24, 42, 0.55);
+  backdrop-filter: blur(6px) saturate(120%);
+  animation: archfade 0.24s var(--ease);
+}
+@keyframes archfade {
+  from {
+    opacity: 0;
+  }
+}
+.archmodal__dialog {
+  position: relative;
+  width: min(860px, 100%);
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: archrise 0.34s var(--ease);
+  outline: none;
+}
+@keyframes archrise {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.985);
+  }
+}
+
+/* Header — brand-blue band with the same milk-ripple texture as the hero. */
+.archmodal__head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 26px 28px 24px;
+  color: #fff;
+  background: radial-gradient(130% 160% at 90% -20%, #0a6fb0 0%, var(--blue) 44%, var(--blue-900) 100%);
+}
+.archmodal__head::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(closest-side, rgba(91, 197, 242, 0.3), transparent) -40px 60px / 260px 260px no-repeat,
+    radial-gradient(closest-side, rgba(232, 199, 89, 0.16), transparent) 96% 130% / 300px 300px no-repeat;
+  pointer-events: none;
+}
+.archmodal__head > * {
+  position: relative;
+  z-index: 1;
+}
+.archmodal__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+.archmodal__eyebrow .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky);
+  box-shadow: 0 0 0 3px rgba(91, 197, 242, 0.35);
+}
+.archmodal__title {
+  color: #fff;
+  font-size: 25px;
+  margin-top: 10px;
+}
+.archmodal__lead {
+  margin-top: 9px;
+  max-width: 60ch;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.86);
+}
+.archmodal__close {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  transition: background 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.archmodal__close:hover {
+  background: rgba(255, 255, 255, 0.24);
+  transform: rotate(90deg);
+}
+.archmodal__close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5);
+}
+
+.archmodal__body {
+  padding: 26px 28px 8px;
+}
+
+/* Stage card */
+.astage {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  padding: 18px 20px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fff, #fbfcfe);
+  box-shadow: var(--shadow-sm);
+}
+.astage::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  border-radius: 4px 0 0 4px;
+}
+.astage--sky::before {
+  background: var(--sky);
+}
+.astage--blue::before {
+  background: var(--blue);
+}
+.astage--gold::before {
+  background: var(--gold);
+}
+.astage--navy::before {
+  background: var(--navy);
+}
+.astage__num {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-faint);
+  padding-top: 3px;
+  letter-spacing: 0.04em;
+}
+.astage__main {
+  flex: 1;
+  min-width: 0;
+}
+.astage__head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.astage__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--blue);
+  background: var(--sky-soft);
+  flex-shrink: 0;
+}
+.astage--gold .astage__icon {
+  color: var(--gold-deep);
+  background: linear-gradient(180deg, #fbf1cf, #f6e6a9);
+}
+.astage--navy .astage__icon {
+  color: var(--navy);
+  background: rgba(63, 64, 151, 0.1);
+}
+.astage__kicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.astage__title {
+  font-size: 16px;
+  margin-top: 2px;
+}
+.astage__lead {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-soft);
+  margin-top: 10px;
+}
+.astage__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+/* Source / serving chips */
+.achip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+}
+.achip__icon {
+  color: var(--blue);
+  display: inline-flex;
+}
+.achip__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.achip__text b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.achip__text small {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+
+/* Medallion mini-flow */
+.medallion-flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.med {
+  display: flex;
+  flex-direction: column;
+  padding: 9px 15px;
+  border-radius: 11px;
+  line-height: 1.2;
+  border: 1px solid transparent;
+}
+.med b {
+  font-size: 13px;
+}
+.med small {
+  font-size: 10.5px;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+.med--bronze {
+  background: #f6ece1;
+  color: #8a5a2b;
+  border-color: #ead6c2;
+}
+.med--silver {
+  background: #eef1f4;
+  color: #5c6a78;
+  border-color: #dde3e9;
+}
+.med--gold {
+  background: linear-gradient(180deg, #fbf1cf, #f6e6a9);
+  color: var(--gold-deep);
+  border-color: rgba(184, 145, 43, 0.35);
+}
+.med__arrow {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* Engine steps */
+.engine-steps {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.estep {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.4;
+}
+.estep__k {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.estep--guard {
+  border-color: rgba(10, 124, 106, 0.3);
+  background: rgba(10, 124, 106, 0.06);
+  color: var(--ok);
+}
+.estep--guard .estep__k {
+  color: var(--ok);
+}
+.estep__plus {
+  align-self: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+.engine-ai {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 11px;
+  padding: 11px 14px;
+  border-radius: 11px;
+  background: linear-gradient(100deg, rgba(63, 64, 151, 0.06), rgba(91, 197, 242, 0.08));
+  border: 1px solid rgba(63, 64, 151, 0.16);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+.engine-ai svg {
+  color: var(--navy);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.engine-ai b {
+  color: var(--text);
+}
+.engine-ai code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  background: rgba(63, 64, 151, 0.1);
+  color: var(--navy);
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+/* Connector between stages */
+.aconn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0 7px 26px;
+}
+.aconn__line {
+  width: 2px;
+  height: 22px;
+  background: linear-gradient(180deg, var(--sky), rgba(91, 197, 242, 0.2));
+  border-radius: 2px;
+}
+.aconn__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+.aconn__arrow {
+  color: var(--sky);
+  display: inline-flex;
+}
+
+.archmodal__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 28px;
+  border-top: 1px solid var(--line);
+  background: #fbfcfd;
+  flex-wrap: wrap;
+}
+.archmodal__foot .faint {
+  font-size: 11px;
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .archmodal__head,
+  .archmodal__body {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .archmodal__title {
+    font-size: 21px;
+  }
+  .astage {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .archmodal,
+  .archmodal__dialog {
+    animation: none;
+  }
+  .reco__img {
+    transition: none;
+  }
+}

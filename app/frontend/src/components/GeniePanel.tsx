@@ -1,17 +1,36 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { api } from '../api';
 import type { GenieAnswer } from '../types';
 import { Spinner, EmptyState } from './Common';
 import { IconSearch, IconArrow } from './Icons';
 
-const SUGGESTIONS = [
+// Default copy = the internal Engine Console framing (unchanged behavior).
+const DEFAULT_SUGGESTIONS = [
   'Which segment has the highest cross-sell conversion?',
   'Top recommended products by revenue this quarter',
   'How many recommendations were held back by stock this month?',
   'Fulfillment rate by distribution center',
 ];
 
-export function GeniePanel() {
+// Props let the SAME panel be reframed per surface (storefront vs console)
+// without forking the component or the backend. All optional; the defaults
+// reproduce the console panel exactly.
+interface GeniePanelProps {
+  kicker?: string;
+  title?: string;
+  placeholder?: string;
+  suggestions?: string[];
+  notConfiguredCopy?: ReactNode;
+}
+
+export function GeniePanel({
+  kicker = 'Databricks Genie',
+  title = 'Ask the reco data in plain language',
+  placeholder = 'e.g. Which segment converts best on cross-sell?',
+  suggestions = DEFAULT_SUGGESTIONS,
+  notConfiguredCopy,
+}: GeniePanelProps = {}) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
@@ -52,8 +71,8 @@ export function GeniePanel() {
           <IconSearch size={18} />
         </div>
         <div>
-          <div className="kicker">Databricks Genie</div>
-          <h4>Ask the reco data in plain language</h4>
+          <div className="kicker">{kicker}</div>
+          <h4>{title}</h4>
         </div>
         {enabled === false && (
           <span className="pill" style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.16)', color: '#fff', borderColor: 'rgba(255,255,255,0.25)' }}>
@@ -65,8 +84,12 @@ export function GeniePanel() {
       <div className="genie__body">
         {enabled === false ? (
           <EmptyState title="Genie is not wired up yet">
-            Set the <code>GENIE_SPACE_ID</code> environment variable (and grant the app's service principal CAN RUN on
-            the space) to enable natural-language analytics here. The rest of the console works without it.
+            {notConfiguredCopy ?? (
+              <>
+                Set the <code>GENIE_SPACE_ID</code> environment variable (and grant the app's service principal CAN RUN
+                on the space) to enable natural-language analytics here. The rest of the console works without it.
+              </>
+            )}
           </EmptyState>
         ) : (
           <>
@@ -81,7 +104,7 @@ export function GeniePanel() {
                 id="genie-question"
                 name="genie-question"
                 className="genie__input"
-                placeholder="e.g. Which segment converts best on cross-sell?"
+                placeholder={placeholder}
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 disabled={asking || enabled === null}
@@ -93,7 +116,7 @@ export function GeniePanel() {
             </form>
 
             <div className="genie__suggest">
-              {SUGGESTIONS.map((s) => (
+              {suggestions.map((s) => (
                 <button key={s} className="genie__chip" onClick={() => { setQuestion(s); ask(s); }} disabled={asking}>
                   {s}
                 </button>

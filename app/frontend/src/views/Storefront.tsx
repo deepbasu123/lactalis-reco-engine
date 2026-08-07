@@ -3,8 +3,17 @@ import { api } from '../api';
 import type { Customer, Favorite, Recommendation } from '../types';
 import { RecoCard } from '../components/RecoCard';
 import { FavoriteCard } from '../components/FavoriteCard';
+import { GeniePanel } from '../components/GeniePanel';
 import { EmptyState, SkeletonCard, Spinner } from '../components/Common';
-import { IconChevron, IconSpark, IconStore, IconBox } from '../components/Icons';
+import { IconChevron, IconSpark, IconStore, IconBox, IconSearch } from '../components/Icons';
+
+// Buyer-framed prompts for the storefront Genie panel. All three were verified
+// to return data against the Lactalis Recommendation Analytics Genie space.
+const STOREFRONT_GENIE_PROMPTS = [
+  'What are the top selling products by revenue?',
+  'Which products are most popular with Restaurants and Cafes?',
+  'Show total spend by product category',
+];
 
 interface Props {
   customers: Customer[];
@@ -142,6 +151,34 @@ export function Storefront({ customers, customersLoading, selectedId, onSelect }
             <code>customer_favorites</code> lands.
           </EmptyState>
         )}
+      </section>
+
+      {/* Talk to your data — B2B self-service analytics on the storefront.
+          Reuses the same Genie panel + /api/genie/ask backend as the Engine
+          Console; only the framing/chips change. Sits at the end so it never
+          disrupts the browse-and-reorder flow above. */}
+      <section className="askdata">
+        <div className="rulehead">
+          <IconSearch size={18} className="muted" />
+          <h3>Talk to your data</h3>
+          <span className="count">powered by Databricks Genie</span>
+        </div>
+        <p className="askdata__lead">
+          Ask about your orders, products and trends in plain language — no dashboards to build. Genie writes the
+          query, runs it on your governed data, and shows the answer.
+        </p>
+        <GeniePanel
+          kicker="Ask MyLactalis"
+          title="Self-service analytics for your account"
+          placeholder="e.g. What are my top products by spend this quarter?"
+          suggestions={STOREFRONT_GENIE_PROMPTS}
+          notConfiguredCopy={
+            <>
+              Natural-language analytics turns on once this workspace's Genie space is connected (
+              <code>GENIE_SPACE_ID</code>). Your favorites and suggestions above work without it.
+            </>
+          }
+        />
       </section>
     </div>
   );
