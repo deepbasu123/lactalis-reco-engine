@@ -8,8 +8,8 @@
 
 ## Purpose
 
-Replace MyLactalis's manual monthly "Suggested for You" spreadsheet (built on the Alright
-Commerce platform, wired to SAP + Salesforce) with an automated, personalized,
+Replace MyLactalis's manual monthly "Suggested for You" spreadsheet (wired to SAP +
+Salesforce) with an automated, personalized,
 fulfillment-safe recommendation engine — and let the internal sales/marketing team
 interrogate performance in natural language via Genie.
 
@@ -82,7 +82,7 @@ silver (`sv_*`, cleaned), gold (`dim_*`/`fact_*`/`signal_*`/`reco_*`, app-facing
 | is_hot_beverage | BOOLEAN | hot chocolate etc. |
 | source_system | STRING | `SAP` |
 
-**`fact_orders`** *(source: SAP + Alright Commerce)*
+**`fact_orders`** *(source: SAP (rep) + Salesforce (ecommerce))*
 | column | type | notes |
 |---|---|---|
 | order_id | STRING | |
@@ -92,16 +92,16 @@ silver (`sv_*`, cleaned), gold (`dim_*`/`fact_*`/`signal_*`/`reco_*`, app-facing
 | quantity | INT | |
 | line_revenue | DOUBLE | AUD |
 | channel | STRING | `ecommerce` / `rep` |
-| source_system | STRING | `Alright Commerce` / `SAP` |
+| source_system | STRING | `Salesforce` / `SAP` |
 
-**`customer_favorites`** *(source: Alright Commerce)*
+**`customer_favorites`** *(source: Salesforce)*
 | column | type | notes |
 |---|---|---|
 | customer_id | STRING | FK |
 | product_id | STRING | FK |
 | reorder_frequency_days | INT | typical reorder cadence |
 | last_ordered_date | DATE | |
-| source_system | STRING | `Alright Commerce` |
+| source_system | STRING | `Salesforce` |
 
 **`stock_by_dc`** *(source: SAP stock)*
 | column | type | notes |
@@ -179,5 +179,5 @@ Dual-mode: local dev uses `DATABRICKS_TOKEN`/profile; deployed uses injected SP 
 
 ## Non-goals (YAGNI)
 
-No real SAP/Salesforce/Alright Commerce integration (synthetic, source-tagged). No live
+No real SAP/Salesforce integration (synthetic, source-tagged). No live
 model training. No auth/login UI (segment switcher instead). No write-back to orders.

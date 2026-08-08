@@ -147,7 +147,7 @@ export function Storefront({ customers, customersLoading, selectedId, onSelect }
           </div>
         ) : (
           <EmptyState title="No favorites recorded">
-            This account's habitual reorder items (from Alright Commerce) will list here once{' '}
+            This account's habitual reorder items (from Salesforce) will list here once{' '}
             <code>customer_favorites</code> lands.
           </EmptyState>
         )}

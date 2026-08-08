@@ -4,9 +4,8 @@
 
 ```
 Source systems (simulated, source-tagged)
-  SAP ERP ............ product catalogue, orders, stock by DC, customer master
-  Salesforce CRM ..... customer segmentation, account context
-  Alright Commerce ... favourites, e-commerce order lines
+  SAP ERP ............ product catalogue, rep orders, stock by DC, customer master
+  Salesforce CRM ..... customer segmentation, e-commerce order lines, favourites
   External signals ... weather, fuel price index, holiday calendar
         |
         v

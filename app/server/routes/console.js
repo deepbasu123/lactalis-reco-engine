@@ -148,9 +148,8 @@ router.get('/lineage', async (req, res, next) => {
         { layer: 'Gold', prefix: 'dim_/fact_/signal_/reco_', note: 'App-facing, governed, lineage-tracked' },
       ],
       sources: [
-        { system: 'SAP', role: 'Product master, orders, stock' },
-        { system: 'Salesforce', role: 'Customer / CRM master' },
-        { system: 'Alright Commerce', role: 'Orders, favorites (MyLactalis platform)' },
+        { system: 'SAP', role: 'Product master, rep orders, stock' },
+        { system: 'Salesforce', role: 'CRM master, e-commerce orders, favorites' },
       ],
       table_sources: results,
     });

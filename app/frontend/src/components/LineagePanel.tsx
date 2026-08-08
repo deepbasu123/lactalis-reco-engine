@@ -12,7 +12,6 @@ const LAYER_COLOR: Record<string, string> = {
 const SOURCE_COLOR: Record<string, string> = {
   SAP: '#0a7c6a',
   Salesforce: '#00a1e0',
-  'Alright Commerce': '#3f4097',
 };
 
 export function LineagePanel() {
@@ -59,8 +58,8 @@ export function LineagePanel() {
           })}
         </div>
         <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 14 }}>
-          Every gold row carries its <code>source_system</code>, so provenance from SAP, Salesforce and Alright
-          Commerce is queryable and lineage is tracked end to end in{' '}
+          Every gold row carries its <code>source_system</code>, so provenance from SAP and Salesforce
+          is queryable and lineage is tracked end to end in{' '}
           <code>
             {data?.catalog || 'lactalis_catalog'}.{data?.schema || 'reco'}
           </code>

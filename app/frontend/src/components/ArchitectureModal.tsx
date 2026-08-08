@@ -104,9 +104,8 @@ export function ArchitectureModal({ open, onClose }: { open: boolean; onClose: (
             title="Where the data comes from"
             lead="Operational systems and outside signals, landed continuously into the lakehouse."
           >
-            <Chip main="SAP ERP" sub="orders, pricing" />
-            <Chip main="Salesforce CRM" sub="accounts, segments" />
-            <Chip main="Alright Commerce" sub="storefront behaviour, favorites" />
+            <Chip main="SAP ERP" sub="rep orders, pricing, stock" />
+            <Chip main="Salesforce CRM" sub="accounts, segments, e-commerce, favorites" />
             <Chip main="External signals" sub="weather · fuel price · school calendar" />
           </Stage>
 

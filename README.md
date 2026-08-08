@@ -39,8 +39,8 @@ API (`ai_query`), Genie, Metric Views, AI/BI (Lakeview) dashboards, and Databric
 
 Five B2B segments, ~80 accounts, a realistic Lactalis Australia SKU catalogue (Pauls,
 Président, Galbani, Lactel, Parmalat, Siggi's), 12 months of orders, favourites, stock by DC,
-and weather / fuel / calendar signals. Source-tagged to SAP, Salesforce, and the Alright
-Commerce e-commerce platform to tell the Unity Catalog lineage story.
+and weather / fuel / calendar signals. Source-tagged to SAP (ERP) and Salesforce (CRM and
+e-commerce) to tell the Unity Catalog lineage story.
 
 ## One-shot deployment into your own workspace
 
@@ -142,7 +142,7 @@ lactalis-reco-engine/
 
 ## Notes
 
-- All data is synthetic and source-tagged for the demo narrative; there is no live SAP,
-  Salesforce, or Alright Commerce integration.
+- All data is synthetic and source-tagged for the demo narrative; there is no live SAP
+  or Salesforce integration.
 - The recommendation rationale is precomputed at deploy time for a fast, deterministic live
   demo. Re-run `deploy.py` (or just the engine step) to regenerate.
