@@ -64,10 +64,16 @@ DASHBOARD_TEMPLATE_SCHEMA = "reco"
 # Rationale model. The deployer verifies the first entry exists and is READY in the
 # target workspace and walks down this list if it does not, so a workspace in a region
 # without Claude still gets AI-written rationale instead of failing.
+# Tried in order, first one that is READY in the workspace wins. Sonnet 4.5 leads because
+# the demo copy was tuned and timed against it; the rest are here so a workspace that has
+# retired it still lands on a capable model instead of the smallest Llama.
 MODEL_PREFERENCE = [
     "databricks-claude-sonnet-4-5",
+    "databricks-claude-sonnet-5",
+    "databricks-claude-sonnet-4-6",
     "databricks-claude-sonnet-4",
     "databricks-claude-haiku-4-5",
+    "databricks-gpt-5-mini",
     "databricks-gpt-oss-120b",
     "databricks-llama-4-maverick",
     "databricks-meta-llama-3-3-70b-instruct",
@@ -571,6 +577,10 @@ def pick_model(api, requested):
         if name and state == "READY":
             ready[name] = e.get("task", "")
 
+    # 'auto' means the caller expressed no preference, so falling through the list is the
+    # expected path and must not look like something went wrong.
+    if requested in ("", "auto", None):
+        requested = ""
     if requested and requested in ready:
         LOG.step("preflight", f"Rationale model: {requested}")
         return requested
@@ -1809,7 +1819,8 @@ def build_parser():
     p.add_argument("--catalog", default="lactalis_catalog", help="Unity Catalog catalog (default: lactalis_catalog)")
     p.add_argument("--schema", default="reco", help="Schema inside the catalog (default: reco)")
     p.add_argument("--warehouse-id", help="SQL warehouse id (default: auto-pick a serverless one)")
-    p.add_argument("--model", default=MODEL_PREFERENCE[0], help="Foundation Model endpoint for the rationale")
+    p.add_argument("--model", default="auto",
+                   help="Foundation Model endpoint for the rationale (default: auto-pick an available one)")
     p.add_argument("--app-name", default="lactalis-reco-engine", help="Databricks App name")
     p.add_argument("--as-of", default="auto",
                    help="Demo 'as of' date driving the contextual signals (default: auto-detect from the seed data)")
