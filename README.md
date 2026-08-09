@@ -8,6 +8,15 @@ results.
 Built entirely on native Databricks: Unity Catalog, Delta, Databricks SQL, Foundation Model
 API (`ai_query`), Genie, Metric Views, AI/BI (Lakeview) dashboards, and Databricks Apps.
 
+![Lactalis B2B Personalized Recommendation Engine architecture](docs/architecture.png)
+
+## The MyLactalis storefront
+
+The B2B customer sees their favourites plus a personalized "Suggested for You" strip, each
+card with a real product image and an AI-written reason.
+
+![MyLactalis storefront with personalized recommendations](docs/screenshots/storefront.png)
+
 ---
 
 ## Deploy it into your own workspace
@@ -300,6 +309,24 @@ favourites, stock by DC, and weather / fuel / calendar signals. Source-tagged to
 Salesforce (CRM and e-commerce) to tell the Unity Catalog lineage story.
 
 All data is synthetic. There is no live SAP or Salesforce integration.
+
+## Inside the app
+
+**Engine Console (internal view)** - conversion and fulfilment KPIs, the five B2B segments,
+the contextual signal and out-of-stock guardrail walkthrough, and Unity Catalog governance
+and lineage across SAP and Salesforce.
+
+![Engine Console showing KPIs, segments, signals and governance](docs/screenshots/console.png)
+
+**Behind the scenes** - a "Powered by Databricks" footer opens an architecture view over the
+app, without navigating away.
+
+![Architecture modal: sources to Unity Catalog to recommendation engine to serving layer](docs/screenshots/architecture-modal.png)
+
+**Talk to your data** - Genie answers natural-language questions on the governed data, right
+inside the storefront.
+
+![Genie natural-language analytics panel](docs/screenshots/genie.png)
 
 ---
 

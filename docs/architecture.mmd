@@ -1,0 +1,85 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#004B85",
+    "primaryTextColor": "#FFFFFF",
+    "primaryBorderColor": "#003366",
+    "lineColor": "#5BC5F2",
+    "clusterBkg": "#EDF4FB",
+    "clusterBorder": "#004B85",
+    "fontFamily": "Segoe UI, Arial, sans-serif",
+    "fontSize": "14px"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "padding": 24,
+    "nodeSpacing": 40,
+    "rankSpacing": 100
+  }
+}}%%
+flowchart LR
+
+    subgraph SRC["STAGE 1 — Data Sources"]
+        direction TB
+        SAP["SAP ERP<br/>Rep orders<br/>Product master<br/>Stock by DC"]
+        SF["Salesforce CRM<br/>Accounts · Segmentation<br/>E-commerce orders<br/>Favourites"]
+        EXT["External Signals<br/>Weather<br/>Fuel price index<br/>School / holiday calendar"]
+    end
+
+    subgraph UC["STAGE 2 — Unity Catalog"]
+        direction TB
+        BRZ["Bronze<br/>Raw · source-tagged"]
+        SLV["Silver<br/>Cleaned · conformed"]
+        GLD["Gold<br/>dim_customer · dim_product<br/>dim_dc · fact_orders<br/>customer_favorites<br/>stock_by_dc · signal_*"]
+    end
+
+    subgraph REC["STAGE 3 — Recommendation Engine<br/>Databricks SQL + Delta"]
+        direction TB
+        SQL["SQL Scoring<br/>Segment affinity<br/>+ signal boosts"]
+        OOS["Out-of-Stock Guardrail<br/>Removes unfulfillable SKUs"]
+        FMAPI["Foundation Model API<br/>ai_query<br/>Natural-language rationale"]
+        OUT["Outputs<br/>reco_candidates<br/>reco_rationale<br/>vw_reco_full"]
+    end
+
+    subgraph SERVE["STAGE 4 — Serving / Consumption"]
+        direction TB
+        GENIE["Genie<br/>Natural-language analytics<br/>for sales and marketing"]
+        DASH["AI/BI Dashboards<br/>Lakeview<br/>Operational KPIs"]
+        APP["Databricks Apps<br/>MyLactalis storefront<br/>+ Engine Console"]
+    end
+
+    SAP --> BRZ
+    SF --> BRZ
+    EXT --> BRZ
+    BRZ --> SLV
+    SLV --> GLD
+    GLD --> SQL
+    SQL --> OOS
+    OOS --> FMAPI
+    FMAPI --> OUT
+    OUT --> GENIE
+    OUT --> DASH
+    OUT --> APP
+
+    classDef sourceNode fill:#004B85,stroke:#003366,color:#FFFFFF
+    classDef bronzeNode fill:#8A9DB0,stroke:#6A7F92,color:#FFFFFF
+    classDef silverNode fill:#5BC5F2,stroke:#3AA5D2,color:#003366
+    classDef goldNode fill:#E8C759,stroke:#C8A740,color:#3F4097
+    classDef recoNode fill:#3F4097,stroke:#2A2B6B,color:#FFFFFF
+    classDef fmapiNode fill:#1A5276,stroke:#003366,color:#FFFFFF
+    classDef outputNode fill:#2471A3,stroke:#1A5276,color:#FFFFFF
+    classDef serveNode fill:#004B85,stroke:#003366,color:#FFFFFF
+
+    class SAP sourceNode
+    class SF sourceNode
+    class EXT sourceNode
+    class BRZ bronzeNode
+    class SLV silverNode
+    class GLD goldNode
+    class SQL recoNode
+    class OOS recoNode
+    class FMAPI fmapiNode
+    class OUT outputNode
+    class GENIE serveNode
+    class DASH serveNode
+    class APP serveNode
