@@ -148,6 +148,7 @@ answers a real question.
             PASS  out-of-stock console query: 4 SKUs held back by the guardrail
             PASS  service principal on Genie space: CAN_RUN
             PASS  Genie question: answered
+            PASS  service principal on dashboard: CAN_READ
 ```
 
 If you deployed with a Databricks CLI profile instead of a token, the deployer can also call

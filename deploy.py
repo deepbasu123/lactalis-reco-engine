@@ -345,11 +345,12 @@ def resolve_auth(args):
         return normalize_host(args.host), args.token
 
     if args.profile:
-        host, token = _from_profile(args.profile, args.host)
+        host, token, reason = _from_profile(args.profile, args.host)
         if token:
             return host, token
         raise DeployError(
             f"Could not get a token for CLI profile '{args.profile}'.\n"
+            f"  Reason: {reason}\n"
             f"  Try:  databricks auth login --host <workspace-url> --profile {args.profile}\n"
             f"  Or run without --profile and paste a personal access token when prompted."
         )
@@ -361,9 +362,11 @@ def resolve_auth(args):
 
     env_profile = os.environ.get("DATABRICKS_CONFIG_PROFILE")
     if env_profile:
-        host, token = _from_profile(env_profile, args.host)
+        host, token, reason = _from_profile(env_profile, args.host)
         if token:
             return host, token
+        LOG.warn("preflight", f"DATABRICKS_CONFIG_PROFILE is set to '{env_profile}' but no "
+                              f"token could be obtained: {reason}")
 
     if not sys.stdin.isatty():
         raise DeployError(
@@ -397,9 +400,14 @@ def _prompt_auth(default_host):
 
 
 def _from_profile(profile, host_override):
-    """Read host/token for a CLI profile. Uses ~/.databrickscfg first, CLI second."""
+    """Read host/token for a CLI profile. Uses ~/.databrickscfg first, CLI second.
+
+    Returns (host, token, reason). `reason` explains a missing token so the caller can
+    tell the user what to actually fix.
+    """
     host = normalize_host(host_override) if host_override else ""
     token = None
+    reason = f"no profile named '{profile}' was found and the Databricks CLI returned nothing"
 
     cfg_path = os.environ.get("DATABRICKS_CONFIG_FILE") or os.path.join(
         os.path.expanduser("~"), ".databrickscfg")
@@ -410,11 +418,13 @@ def _from_profile(profile, host_override):
             if cp.has_section(profile):
                 host = host or normalize_host(cp.get(profile, "host", fallback=""))
                 token = cp.get(profile, "token", fallback=None)
-        except Exception:
-            pass
+        except configparser.Error as e:
+            reason = f"{cfg_path} could not be parsed ({e})"
 
     if not token:
         # OAuth (U2M) profiles keep no token in the file; the CLI mints one on demand.
+        # Keep why it failed: "the CLI is not installed" and "the profile has expired" need
+        # different fixes, and the caller turns this into the user-facing message.
         try:
             out = subprocess.run(
                 ["databricks", "auth", "token", "--profile", profile],
@@ -423,9 +433,18 @@ def _from_profile(profile, host_override):
             )
             if out.returncode == 0:
                 token = json.loads(out.stdout).get("access_token")
-        except Exception:
-            token = None
-    return host, token
+                if not token:
+                    reason = "the Databricks CLI returned no access token for that profile"
+            else:
+                lines = (out.stderr or out.stdout or "").strip().splitlines()
+                reason = lines[-1] if lines else f"the Databricks CLI exited with {out.returncode}"
+        except FileNotFoundError:
+            reason = "the Databricks CLI is not installed or not on PATH"
+        except subprocess.TimeoutExpired:
+            reason = "the Databricks CLI did not respond within 120s"
+        except (ValueError, OSError) as e:
+            reason = str(e)
+    return host, token, (None if token else reason)
 
 
 # ---------------------------------------------------------------- helpers
@@ -984,6 +1003,24 @@ SELECT customer_id,product_id,
 FROM ctx""")
 
 
+def describe_rationale_source(api, fq):
+    """Read back what actually wrote the rationale.
+
+    The FMAPI path can fail or come back partly empty and fall through to rule-based text,
+    so the summary reports the `generated_by` column rather than what was requested.
+    """
+    try:
+        rows = api.sql(f"SELECT generated_by, COUNT(*) AS n FROM {fq}.reco_rationale "
+                       f"GROUP BY generated_by ORDER BY n DESC")
+    except SqlError:
+        return "unknown"
+    if not rows:
+        return "unknown"
+    if len(rows) == 1:
+        return str(rows[0][0])
+    return ", ".join(f"{r[0]} ({r[1]} rows)" for r in rows)
+
+
 def _fallback_why_sql():
     """Deterministic sentence used when the FMAPI is unavailable or returns nothing."""
     return """CONCAT(
@@ -1051,8 +1088,9 @@ measures:
   - name: Conversion Rate
     expr: AVG(converted)
 """
+    views = (("mv_sales_performance", sales_yaml), ("mv_reco_performance", reco_yaml))
     made = 0
-    for name, body in (("mv_sales_performance", sales_yaml), ("mv_reco_performance", reco_yaml)):
+    for name, body in views:
         try:
             api.sql(f"CREATE OR REPLACE VIEW {fq}.{ident(name)} "
                     f"WITH METRICS LANGUAGE YAML AS $$\n{body}$$")
@@ -1061,6 +1099,7 @@ measures:
             LOG.warn("metrics", f"Skipped metric view {name}: {e.message[:160]}")
     if made:
         LOG.detail(f"{made} metric view(s) ready.")
+    return made, len(views)
 
 
 # ---------------------------------------------------------------- step: Genie
@@ -1616,7 +1655,7 @@ def verify_app_live(api, app_url, genie_enabled):
     return "ok" if ok else "failed"
 
 
-def verify_backend(api, catalog, schema, sp, genie_space_id):
+def verify_backend(api, catalog, schema, sp, genie_space_id, dashboard_id=""):
     """Prove the app will work, without calling the app itself.
 
     Checks the grants that the app's service principal actually resolved to, runs the
@@ -1657,23 +1696,30 @@ def verify_backend(api, catalog, schema, sp, genie_space_id):
             ok = _report(label, f"error: {str(e)[:160]}", False) and ok
 
     if genie_space_id:
-        acl_ok, acl_detail = _genie_acl(api, genie_space_id, sp)
+        acl_ok, acl_detail = _object_acl(api, f"/api/2.0/permissions/genie/{genie_space_id}",
+                                         sp, ("CAN_RUN", "CAN_EDIT", "CAN_MANAGE"))
         ok = _report("service principal on Genie space", acl_detail, acl_ok) and ok
         answer_ok, answer_detail = _genie_ask(api, genie_space_id)
         ok = _report("Genie question", answer_detail, answer_ok) and ok
+
+    if dashboard_id:
+        acl_ok, acl_detail = _object_acl(api, f"/api/2.0/permissions/dashboards/{dashboard_id}",
+                                         sp, ("CAN_READ", "CAN_EDIT", "CAN_RUN", "CAN_MANAGE"))
+        ok = _report("service principal on dashboard", acl_detail, acl_ok) and ok
     return ok
 
 
-def _genie_acl(api, space_id, sp):
+def _object_acl(api, path, sp, accepted):
+    """Check the service principal's permission entry on a workspace object."""
     try:
-        acl = api.get(f"/api/2.0/permissions/genie/{space_id}").get("access_control_list", [])
+        acl = api.get(path).get("access_control_list", [])
     except ApiError as e:
         return False, f"error: {e.message[:120]}"
     for entry in acl:
         if entry.get("service_principal_name") == sp:
             levels = [p.get("permission_level") for p in entry.get("all_permissions", [])]
-            return (any(l in ("CAN_RUN", "CAN_EDIT", "CAN_MANAGE") for l in levels),
-                    ", ".join(x for x in levels if x))
+            return (any(l in accepted for l in levels),
+                    ", ".join(x for x in levels if x) or "no permission level")
     return False, "no permission entry found"
 
 
@@ -1711,11 +1757,22 @@ DASHBOARD_NAME = "Lactalis Recommendation Engine Performance"
 
 
 def _references_schema(api, path, field, marker):
-    """True when an object's serialized definition mentions catalog.schema."""
+    """True when an object's serialized definition mentions catalog.schema.
+
+    An absent field is reported rather than read as "no match", because that would
+    quietly spare an object that should have been removed.
+    """
     try:
-        return marker in (api.get(path).get(field) or "")
-    except ApiError:
+        body = api.get(path)
+    except ApiError as e:
+        LOG.warn("destroy", f"Could not inspect {path.split('?')[0]} ({e.message[:120]}); "
+                            f"leaving it in place.")
         return False
+    if field not in body:
+        LOG.warn("destroy", f"{path.split('?')[0]} returned no '{field}', so its contents "
+                            f"could not be checked; leaving it in place.")
+        return False
+    return marker in (body.get(field) or "")
 
 
 def destroy(api, args, user):
@@ -1741,8 +1798,11 @@ def destroy(api, args, user):
     marker = f"{args.catalog}.{args.schema}."
 
     genie_id = _find_genie_space(api, GENIE_TITLE)
-    if genie_id and not _references_schema(api, f"/api/2.0/genie/spaces/{genie_id}",
-                                           "serialized_space", marker):
+    # The Genie GET omits serialized_space unless it is asked for, and a missing field would
+    # read as "does not reference this schema" and silently spare a space that should go.
+    if genie_id and not _references_schema(
+            api, f"/api/2.0/genie/spaces/{genie_id}?include_serialized_space=true",
+            "serialized_space", marker):
         LOG.detail(f"Leaving Genie space {genie_id} alone: it does not reference "
                    f"{args.catalog}.{args.schema}.")
         genie_id = None
@@ -1874,10 +1934,16 @@ def run(args):
     build_data_layer(api, catalog, args.schema)
     as_of = resolve_as_of(api, catalog, args.schema, args.as_of)
     build_reco_engine(api, catalog, args.schema, model, as_of, rationale=not args.no_rationale)
-    build_metric_views(api, catalog, args.schema)
+    rationale_source = describe_rationale_source(api, f"{ident(catalog)}.{ident(args.schema)}")
+    views_made, views_total = build_metric_views(api, catalog, args.schema)
 
+    # An object that was asked for but could not be built is a failure, not a skip, and the
+    # summary and exit code have to tell those two apart.
     genie_id = "" if args.skip_genie else build_genie(api, catalog, args.schema, user)
-    dashboard_id = "" if args.skip_dashboard else build_dashboard(api, catalog, args.schema, user)
+    dashboard_id, dashboard_failed = "", False
+    if not args.skip_dashboard:
+        dashboard_id = build_dashboard(api, catalog, args.schema, user)
+        dashboard_failed = not dashboard_id
 
     data_ok = verify_data(api, catalog, args.schema)
 
@@ -1901,7 +1967,7 @@ def run(args):
                 LOG.detail("personal access token. This does not affect the app itself, which "
                            "you open in a browser.")
                 LOG.detail("Verifying everything the app depends on instead:")
-                app_ok = verify_backend(api, catalog, args.schema, sp, genie_id)
+                app_ok = verify_backend(api, catalog, args.schema, sp, genie_id, dashboard_id)
             else:
                 app_ok = result == "ok"
 
@@ -1911,11 +1977,13 @@ def run(args):
     print("=" * 72)
     print(f"  Catalog / schema : {catalog}.{args.schema}")
     print(f"  SQL warehouse    : {warehouse.get('name')} ({api.warehouse_id})")
-    print(f"  Rationale model  : {'rule-based (no FMAPI)' if args.no_rationale else model}")
+    print(f"  Rationale source : {rationale_source}")
+    print(f"  Metric views     : {views_made} of {views_total}"
+          f"{'' if views_made == views_total else '  FAILED (see above)'}")
     print(f"  Genie space      : {genie_id or '(skipped)'}")
     if genie_id:
         print(f"                     {api.host}/genie/rooms/{genie_id}")
-    print(f"  Dashboard        : {dashboard_id or '(skipped)'}")
+    print(f"  Dashboard        : {dashboard_id or ('FAILED (see above)' if dashboard_failed else '(skipped)')}")
     if dashboard_id:
         print(f"                     {api.host}/dashboardsv3/{dashboard_id}/published")
     print(f"  App              : {app_url or '(skipped)'}")
@@ -1936,7 +2004,8 @@ def run(args):
         print(f"  Open the demo:  {app_url}")
         print()
 
-    failed = (not data_ok) or (app_ok is False)
+    failed = ((not data_ok) or (app_ok is False) or dashboard_failed
+              or views_made != views_total)
     return 1 if failed else 0
 
 
