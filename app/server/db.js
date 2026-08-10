@@ -72,6 +72,12 @@ function coerce(value, typeName) {
  * @param {object} opts        { tolerateMissing: boolean }
  */
 export async function runQuery(statement, parameters = [], opts = {}) {
+  if (!config.warehouseId) {
+    throw new Error(
+      'No SQL warehouse configured (DATABRICKS_WAREHOUSE_ID is empty). In Databricks Apps ' +
+        "this is injected from the app's `sql-warehouse` resource; re-run deploy.py to attach it."
+    );
+  }
   const token = await getToken();
   const body = {
     warehouse_id: config.warehouseId,

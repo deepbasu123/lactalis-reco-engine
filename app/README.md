@@ -56,11 +56,11 @@ time** in the Apps environment.
 ### Graceful degradation (important for the demo timeline)
 
 The `reco_candidates`, `reco_rationale`, and `vw_reco_full` objects (and the rest of the gold
-layer) are produced by a separate data workstream. Until they exist, every data endpoint
-returns an **empty-but-valid** shape (e.g. `{"customers": [], "count": 0}`) instead of an
-error, and the UI renders tasteful empty states. No fake recommendations are hardcoded in the
-frontend; everything reads from Unity Catalog. When the tables land, the app surfaces data
-automatically with no code change.
+layer) are built by `deploy.py` before the app is created, so a normal deployment never sees
+them missing. If they are dropped later, every data endpoint returns an **empty-but-valid**
+shape (e.g. `{"customers": [], "count": 0}`) instead of an error, and the UI renders empty
+states. No fake recommendations are hardcoded in the frontend; everything reads from Unity
+Catalog, and the app picks the tables back up with no code change.
 
 ## Dual-mode authentication
 
@@ -78,8 +78,8 @@ Tokens are cached in memory and refreshed shortly before expiry.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `DATABRICKS_HOST` | prod: injected | `https://fevm-lactalis.cloud.databricks.com` | Workspace URL. In Apps it arrives as a bare hostname; `config.js` adds `https://`. |
-| `DATABRICKS_WAREHOUSE_ID` | yes | `84b2d6209ac2f455` | SQL warehouse that serves the gold layer. In Apps, bound via the `sql-warehouse` resource (`valueFrom`). |
+| `DATABRICKS_HOST` | prod: injected | _(none)_ | Workspace URL. In Apps it arrives as a bare hostname; `config.js` adds `https://`. |
+| `DATABRICKS_WAREHOUSE_ID` | yes | _(none)_ | SQL warehouse that serves the gold layer. In Apps, bound via the `sql-warehouse` resource (`valueFrom`). |
 | `RECO_CATALOG` | no | `lactalis_catalog` | Unity Catalog catalog. |
 | `RECO_SCHEMA` | no | `reco` | Schema holding the gold/reco tables. |
 | `GENIE_SPACE_ID` | no | _(empty)_ | Genie space for the in-app NL analytics box. When empty, the Genie panel shows a "not configured" state. |
@@ -87,12 +87,17 @@ Tokens are cached in memory and refreshed shortly before expiry.
 | `DATABRICKS_CLIENT_ID` | prod: injected | — | SP OAuth client id (Apps runtime). |
 | `DATABRICKS_CLIENT_SECRET` | prod: injected | — | SP OAuth client secret (Apps runtime). |
 | `DATABRICKS_TOKEN` | local alt | — | Static bearer token for local dev. |
-| `DATABRICKS_CONFIG_PROFILE` | local alt | `fe-vm-lactalis` | CLI profile used for the local token fallback. |
+| `DATABRICKS_CONFIG_PROFILE` | local alt | _(none)_ | CLI profile used for the local token fallback. |
 | `PORT` | no | `8000` | Listen port. Apps sets this dynamically. |
 | `NODE_ENV` | no | — | `production` in `app.yaml`. |
 
+`DATABRICKS_HOST` and `DATABRICKS_WAREHOUSE_ID` deliberately have no defaults. A wrong
+warehouse id fails in a confusing way, so an unset one fails with a clear message instead:
+the server still starts, and `/api/health` lists what is missing under `config_problems`.
+
 The service principal needs: **USE CATALOG / USE SCHEMA + SELECT** on `lactalis_catalog.reco`,
-**CAN USE** on the warehouse, and (for Genie) **CAN RUN** on the Genie space.
+**CAN USE** on the warehouse, and (for Genie) **CAN RUN** on the Genie space. `deploy.py`
+grants all of these automatically.
 
 ## Local development
 
@@ -103,12 +108,15 @@ npm run build               # installs + builds the frontend into frontend/dist
 
 # Run the production-style server (serves the built frontend + proxies Databricks).
 # Local auth uses the CLI profile fallback:
-DATABRICKS_CONFIG_PROFILE=fe-vm-lactalis \
-DATABRICKS_HOST=https://fevm-lactalis.cloud.databricks.com \
-DATABRICKS_WAREHOUSE_ID=84b2d6209ac2f455 \
+DATABRICKS_CONFIG_PROFILE=<your-cli-profile> \
+DATABRICKS_HOST=https://<your-workspace>.cloud.databricks.com \
+DATABRICKS_WAREHOUSE_ID=<your-warehouse-id> \
 PORT=8000 npm start
 # open http://localhost:8000
 ```
+
+`deploy.py` prints the warehouse id it used, and `GET /api/health` on the deployed app
+reports the catalog and schema it is reading.
 
 Front-end hot-reload during development (two terminals):
 
@@ -121,30 +129,24 @@ Optionally set `GENIE_SPACE_ID` and `DASHBOARD_ID` to exercise those panels loca
 
 ## Deploying to Databricks Apps
 
-`app.yaml` is ready. It runs `node server/index.js`, sets `NODE_ENV=production`, binds the
-warehouse via the `sql-warehouse` resource, and sets the catalog/schema. The frontend is
-pre-built and committed under `frontend/dist`, so the runtime does not build.
+Use `deploy.py` in the repository root. It builds the data layer, creates the Genie space and
+dashboard, creates the app, binds the warehouse resource, grants the service principal
+everything it needs, uploads the source, deploys, and verifies the result:
 
 ```bash
-# 1. Create the app (once)
-databricks apps create lactalis-reco-engine --profile fe-vm-lactalis \
-  --description "Lactalis B2B Personalized Recommendation Engine"
-
-# 2. Sync source to the workspace
-databricks sync . /Workspace/Users/<you>/lactalis-reco-engine --profile fe-vm-lactalis
-
-# 3. In the App UI (or a bundle), add resources:
-#    - SQL warehouse  -> key "sql-warehouse"  (permission: CAN USE)  -> 84b2d6209ac2f455
-#    - (optional) Genie space, referenced by GENIE_SPACE_ID
-#    Grant the app's service principal SELECT on lactalis_catalog.reco.
-
-# 4. Deploy
-databricks apps deploy lactalis-reco-engine --profile fe-vm-lactalis \
-  --source-code-path /Workspace/Users/<you>/lactalis-reco-engine
+python deploy.py
 ```
 
-To enable Genie and the dashboard embed after deploy, set `GENIE_SPACE_ID` and `DASHBOARD_ID`
-in `app.yaml` (or as App env) and redeploy.
+See the root `README.md` for the full walkthrough and the available flags.
+
+`app.yaml` in this folder is a template. `deploy.py` generates the real one at upload time
+with the Genie space id and dashboard id filled in. It runs `node server/index.js`, sets
+`NODE_ENV=production`, binds the warehouse via the `sql-warehouse` resource, and sets the
+catalog and schema. The frontend is pre-built and committed under `frontend/dist`, so the
+Apps runtime installs npm dependencies but does not build the frontend.
+
+`deploy.py` already sets `GENIE_SPACE_ID` and `DASHBOARD_ID`. Set them by hand only if you
+created those objects yourself, or pass `--skip-genie` / `--skip-dashboard` to leave them out.
 
 ## API reference
 

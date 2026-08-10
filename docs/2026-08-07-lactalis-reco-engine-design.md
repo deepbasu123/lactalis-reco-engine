@@ -2,9 +2,8 @@
 
 **Date:** 2026-08-07
 **Author:** Deep Basu (Databricks SA)
-**Workspace:** https://fevm-lactalis.cloud.databricks.com (profile `fe-vm-lactalis`)
-**Catalog:** `lactalis_catalog`  •  **Schema:** `reco`
-**Warehouse:** `84b2d6209ac2f455` (Serverless Starter, path `/sql/1.0/warehouses/84b2d6209ac2f455`)
+**Catalog:** `lactalis_catalog`  •  **Schema:** `reco` (both overridable via `deploy.py`)
+**Warehouse:** any serverless SQL warehouse; `deploy.py` picks one unless you pass `--warehouse-id`
 
 ## Purpose
 

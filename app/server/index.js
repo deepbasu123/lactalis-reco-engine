@@ -5,7 +5,7 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config } from './config.js';
+import { config, configProblems } from './config.js';
 import { authMode } from './auth.js';
 import { ping } from './db.js';
 import dataRoutes from './routes/data.js';
@@ -37,11 +37,16 @@ app.use((req, res, next) => {
 // Reports process liveness always; warehouse reachability best-effort so the app
 // is considered healthy for routing even if the warehouse is briefly cold.
 app.get('/api/health', async (req, res) => {
+  const problems = configProblems();
   let warehouse = 'unknown';
-  try {
-    warehouse = (await ping()) ? 'reachable' : 'unreachable';
-  } catch (err) {
-    warehouse = `error: ${err.message?.slice(0, 120) || 'unknown'}`;
+  if (problems.length) {
+    warehouse = 'not configured';
+  } else {
+    try {
+      warehouse = (await ping()) ? 'reachable' : 'unreachable';
+    } catch (err) {
+      warehouse = `error: ${err.message?.slice(0, 160) || 'unknown'}`;
+    }
   }
   res.status(200).json({
     status: 'healthy',
@@ -51,6 +56,7 @@ app.get('/api/health', async (req, res) => {
     schema: config.schema,
     genie_enabled: Boolean(config.genieSpaceId),
     dashboard_configured: Boolean(config.dashboardId),
+    config_problems: problems,
     time: new Date().toISOString(),
   });
 });
@@ -104,4 +110,7 @@ app.listen(config.port, () => {
       `[auth=${authMode()}, catalog=${config.catalog}.${config.schema}, ` +
       `genie=${config.genieSpaceId ? 'on' : 'off'}, dashboard=${config.dashboardId ? 'on' : 'off'}]`
   );
+  for (const problem of configProblems()) {
+    console.error(`CONFIG PROBLEM: ${problem}`);
+  }
 });

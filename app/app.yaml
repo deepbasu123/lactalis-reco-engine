@@ -1,15 +1,20 @@
 # Databricks Apps runtime config for the Lactalis Reco Engine.
-# The server is dependency-light (express only); the React app is pre-built into
-# frontend/dist and shipped with the source, so no build runs at deploy time.
+#
+# This file is a TEMPLATE for local reference. deploy.py generates the real one at
+# deploy time with your catalog, schema, Genie space id and dashboard id filled in,
+# and uploads that generated version alongside the source. Editing this file by hand
+# has no effect on a deploy.py deployment.
+#
+# The server is dependency-light (express only) and the React app is pre-built into
+# frontend/dist, so the Apps runtime only has to `npm install` and start Node.
 command: ['node', 'server/index.js']
 
 env:
   - name: 'NODE_ENV'
     value: 'production'
 
-  # SQL warehouse that serves the gold/reco layer. `valueFrom` binds to the
-  # App resource keyed `sql-warehouse` (add it in the App UI / bundle); the
-  # value it injects is the warehouse id.
+  # Injected from the app's `sql-warehouse` resource, which deploy.py attaches when
+  # it creates the app. Without that resource the app has no warehouse to query.
   - name: 'DATABRICKS_WAREHOUSE_ID'
     valueFrom: 'sql-warehouse'
 
@@ -19,14 +24,14 @@ env:
   - name: 'RECO_SCHEMA'
     value: 'reco'
 
-  # Optional. Set once the Genie space and Lakeview dashboard exist. The UI
-  # degrades gracefully when these are empty.
+  # Filled in by deploy.py. Empty here so a hand-deployed copy degrades gracefully
+  # instead of pointing at someone else's workspace objects.
   - name: 'GENIE_SPACE_ID'
-    value: '01f19226397110aabc5e5b1832212b30'
+    value: ''
   - name: 'DASHBOARD_ID'
-    value: '01f19227a9a41291b8544defb7f70c90'
+    value: ''
 
-# NOTE on auth: the Databricks Apps runtime automatically injects the service
-# principal OAuth credentials (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET)
-# and DATABRICKS_HOST. server/auth.js detects those and uses M2M OAuth in
-# production, falling back to DATABRICKS_TOKEN or a CLI profile locally.
+# Auth: the Databricks Apps runtime injects the service principal OAuth credentials
+# (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET) and DATABRICKS_HOST. server/auth.js
+# detects those and uses M2M OAuth in production, falling back to DATABRICKS_TOKEN or a
+# CLI profile locally.
