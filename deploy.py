@@ -112,9 +112,20 @@ PRIMARY_KEYS = {
 # ---- scheduled refresh -------------------------------------------------------------
 # A Databricks Job walks bronze -> silver -> gold -> reco -> ai_query twice a day, so the
 # demo keeps moving instead of being frozen at whatever deploy.py built.
-JOB_NAME = "[Lactalis] Medallion Refresh"
+JOB_NAME_BASE = "[Lactalis] Medallion Refresh"
 JOB_CRON = "0 0 8,16 * * ?"          # 08:00 and 16:00, quartz
 JOB_TIMEZONE = "Australia/Brisbane"  # the demo is AU-based; Brisbane has no DST
+
+
+def job_name(app_name):
+    """Per-deployment job name so two demos in one workspace never collide.
+
+    The job is looked up by name (Jobs API has no natural unique key we set), so a fixed
+    name would make a second deployment jobs/reset the first one's job onto its schema.
+    Scoping by app_name keeps each deployment's refresh job independent, the same way the
+    pipeline SQL path and app source folder are already scoped by app_name.
+    """
+    return f"{JOB_NAME_BASE} ({app_name})"
 
 # Session time zone on a warehouse is UTC, and 08:00 Brisbane is still the previous UTC
 # day. Deriving the parity from a Brisbane-local date is what keeps both of a day's runs
@@ -1288,7 +1299,7 @@ def set_job_schedule_paused(api, job_id, paused):
     }}})
 
 
-def quiesce_pipeline_job(api):
+def quiesce_pipeline_job(api, app_name):
     """Get the refresh job out of the way before rebuilding the tables underneath it.
 
     deploy.py rewrites bronze with CREATE OR REPLACE while the job's first task is
@@ -1300,7 +1311,8 @@ def quiesce_pipeline_job(api):
     Returns the job id if it was paused here, so the caller knows to re-arm it. Never
     fatal: the worst case is a deployment that has to be re-run.
     """
-    job_id = _find_job(api, JOB_NAME)
+    name = job_name(app_name)
+    job_id = _find_job(api, name)
     if not job_id:
         return ""
     path = f"/api/2.1/jobs/runs/list?job_id={job_id}&active_only=true"
@@ -1325,7 +1337,7 @@ def quiesce_pipeline_job(api):
     except ApiError as e:
         LOG.warn("pipeline", f"Could not quiesce the refresh job ({e.message[:120]}). "
                              f"If this deployment fails on a Delta concurrency error, pause "
-                             f"'{JOB_NAME}' in Workflows and re-run.")
+                             f"'{name}' in Workflows and re-run.")
         return ""
 
 
@@ -1370,8 +1382,9 @@ def ensure_pipeline_job(api, catalog, schema, user, model, as_of, use_ai, app_na
             spec["depends_on"] = [{"task_key": depends}]
         return spec
 
+    name = job_name(app_name)
     settings = {
-        "name": JOB_NAME,
+        "name": name,
         "description": (f"Refreshes {catalog}.{schema} bronze -> silver -> gold, re-scores "
                         f"recommendations and rewrites the AI rationale."),
         # The tasks are whole-table CREATE OR REPLACE rebuilds, so two runs at once (a
@@ -1392,7 +1405,7 @@ def ensure_pipeline_job(api, catalog, schema, user, model, as_of, use_ai, app_na
     }
 
     try:
-        job_id = _find_job(api, JOB_NAME)
+        job_id = _find_job(api, name)
         if job_id:
             api.post("/api/2.1/jobs/reset", {"job_id": job_id, "new_settings": settings})
             LOG.detail(f"Updated existing job {job_id}")
@@ -2172,9 +2185,10 @@ def destroy(api, args, user):
     except ApiError:
         pass
 
-    job_id = _find_job(api, JOB_NAME)
+    jname = job_name(args.app_name)
+    job_id = _find_job(api, jname)
     if job_id:
-        targets.append(("refresh job", f"{JOB_NAME} ({job_id})"))
+        targets.append(("refresh job", f"{jname} ({job_id})"))
 
     sql_path = f"/Workspace/Users/{user}/{args.app_name}-pipeline"
     try:
@@ -2239,7 +2253,7 @@ def destroy(api, args, user):
     # Only now, past the point of no return: a refresh running through the teardown would
     # recreate tables in the schema being dropped. Pausing before the prompt would leave
     # the schedule off for anyone who answered no.
-    quiesce_pipeline_job(api)
+    quiesce_pipeline_job(api, args.app_name)
 
     for kind, name in targets:
         try:
@@ -2332,7 +2346,7 @@ def run(args):
     user, warehouse, model = preflight(api, args)
     catalog = resolve_catalog(api, args.catalog, user, args.yes)
 
-    paused_job = quiesce_pipeline_job(api)
+    paused_job = quiesce_pipeline_job(api, args.app_name)
     build_data_layer(api, catalog, args.schema)
     as_of = resolve_as_of(api, catalog, args.schema, args.as_of)
     build_reco_engine(api, catalog, args.schema, model, as_of, rationale=not args.no_rationale)
@@ -2352,7 +2366,7 @@ def run(args):
             LOG.step("pipeline", "Left the existing refresh job as it was and re-armed it")
         except ApiError as e:
             LOG.warn("pipeline", f"Could not re-arm the refresh schedule ({e.message[:120]}). "
-                                 f"Unpause '{JOB_NAME}' in Workflows.")
+                                 f"Unpause '{job_name(args.app_name)}' in Workflows.")
 
     # An object that was asked for but could not be built is a failure, not a skip, and the
     # summary and exit code have to tell those two apart.
