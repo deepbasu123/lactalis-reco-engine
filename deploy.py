@@ -549,8 +549,10 @@ def load_seed_csv(name):
 def preflight(api, args):
     """Validate the connection, pick a warehouse, pick a rationale model."""
     LOG.step("preflight", f"Connecting to {api.host}")
+    user = ""
     try:
         me = api.get("/api/2.0/preview/scim/v2/Me")
+        user = me.get("userName", "")
     except ApiError as e:
         if e.status in (401, 403):
             raise DeployError(
@@ -559,9 +561,41 @@ def preflight(api, args):
                 f"  Check the workspace URL is right and the token has not expired or been revoked.\n"
                 f"  Generate a fresh token: avatar > Settings > Developer > Access tokens."
             )
-        raise
-    user = me.get("userName", "unknown")
+        # A 400 here is not a credentials problem (bad tokens return 401). The usual cause is
+        # a brand-new workspace where SCIM "Me" is not resolvable yet. The only thing this
+        # call gives us is the caller's username for /Workspace/Users/<user>/ paths, so let
+        # the caller supply it with --user and carry on rather than dying at the first step.
+        if not args.user:
+            raise DeployError(
+                f"Could not look up your username from {api.host} "
+                f"(GET /api/2.0/preview/scim/v2/Me returned {e.status}).\n"
+                f"  This is not a token-scope problem: an invalid token returns 401, not "
+                f"{e.status}. On a brand-new workspace this endpoint can reject the lookup\n"
+                f"  before user identity is fully provisioned.\n"
+                f"  Re-run and pass your workspace login email so the deployer can build your\n"
+                f"  workspace paths without the lookup, for example:\n"
+                f"    python deploy.py --user you@company.com   (plus your usual flags)"
+            )
+        LOG.detail(f"Username lookup returned {e.status}; using --user {args.user}")
+
+    if args.user:
+        user = args.user  # explicit override always wins
+    if not user:
+        raise DeployError(
+            "Could not determine your username. Re-run with --user you@company.com."
+        )
     LOG.detail(f"Authenticated as {user}")
+
+    # /Workspace/Users/<user>/ is normally created on first browser login. On a brand-new
+    # workspace where the user only ever created a PAT, it may not exist yet, which would
+    # break the Genie/dashboard parent_path and the source upload. mkdirs is recursive and
+    # idempotent, so ensure the base folder up front.
+    try:
+        api.post("/api/2.0/workspace/mkdirs", {"path": f"/Workspace/Users/{user}"})
+    except ApiError as e:
+        LOG.warn("preflight", f"Could not pre-create /Workspace/Users/{user} ({e.status}). "
+                              f"If later steps fail on a missing path, log into the workspace "
+                              f"UI once (which creates your user folder) and re-run.")
 
     warehouse = ensure_warehouse(api, args.warehouse_id)
     check_sql_quoting(api)
@@ -2289,6 +2323,9 @@ def build_parser():
     p.add_argument("--host", help="Workspace URL, e.g. https://xxx.cloud.databricks.com")
     p.add_argument("--token", help="Personal access token (use with --host)")
     p.add_argument("--profile", help="Databricks CLI profile to read credentials from")
+    p.add_argument("--user", help="Your workspace login email. Only needed if the automatic "
+                                  "username lookup fails (e.g. a brand-new workspace where SCIM "
+                                  "Me returns 400); used to build /Workspace/Users/<you>/ paths.")
     p.add_argument("--catalog", default="lactalis_catalog", help="Unity Catalog catalog (default: lactalis_catalog)")
     p.add_argument("--schema", default="reco", help="Schema inside the catalog (default: reco)")
     p.add_argument("--warehouse-id", help="SQL warehouse id (default: auto-pick a serverless one)")
