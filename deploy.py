@@ -2236,6 +2236,11 @@ def destroy(api, args, user):
             return 1
         print()
 
+    # Only now, past the point of no return: a refresh running through the teardown would
+    # recreate tables in the schema being dropped. Pausing before the prompt would leave
+    # the schedule off for anyone who answered no.
+    quiesce_pipeline_job(api)
+
     for kind, name in targets:
         try:
             if kind == "app":
@@ -2322,8 +2327,6 @@ def run(args):
     if args.destroy:
         me = api.get("/api/2.0/preview/scim/v2/Me").get("userName", "")
         ensure_warehouse(api, args.warehouse_id)
-        # Otherwise a refresh mid-teardown recreates tables in the schema being dropped.
-        quiesce_pipeline_job(api)
         return destroy(api, args, me)
 
     user, warehouse, model = preflight(api, args)
