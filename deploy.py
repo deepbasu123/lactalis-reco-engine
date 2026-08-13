@@ -91,6 +91,71 @@ SEED_TABLES = [
     "signal_weather", "signal_fuel_index", "signal_calendar",
 ]
 
+# Medallion prefixes. Gold keeps the bare seed-table names so the app, Genie space and
+# dashboard keep reading the same objects they always did.
+BRONZE = "bz_"
+SILVER = "sv_"
+
+# Natural keys, used by the silver layer to de-duplicate whatever bronze landed.
+PRIMARY_KEYS = {
+    "dim_dc": ["dc_id"],
+    "dim_customer": ["customer_id"],
+    "dim_product": ["product_id"],
+    "fact_orders": ["order_id"],
+    "customer_favorites": ["customer_id", "product_id"],
+    "stock_by_dc": ["dc_id", "product_id"],
+    "signal_weather": ["dc_id", "signal_date"],
+    "signal_fuel_index": ["region", "signal_date"],
+    "signal_calendar": ["signal_date"],
+}
+
+# ---- scheduled refresh -------------------------------------------------------------
+# A Databricks Job walks bronze -> silver -> gold -> reco -> ai_query twice a day, so the
+# demo keeps moving instead of being frozen at whatever deploy.py built.
+JOB_NAME_BASE = "[Lactalis] Medallion Refresh"
+JOB_CRON = "0 0 8,16 * * ?"          # 08:00 and 16:00, quartz
+JOB_TIMEZONE = "Australia/Brisbane"  # the demo is AU-based; Brisbane has no DST
+
+
+def job_name(app_name):
+    """Per-deployment job name so two demos in one workspace never collide.
+
+    The job is looked up by name (Jobs API has no natural unique key we set), so a fixed
+    name would make a second deployment jobs/reset the first one's job onto its schema.
+    Scoping by app_name keeps each deployment's refresh job independent, the same way the
+    pipeline SQL path and app source folder are already scoped by app_name.
+    """
+    return f"{JOB_NAME_BASE} ({app_name})"
+
+# Session time zone on a warehouse is UTC, and 08:00 Brisbane is still the previous UTC
+# day. Deriving the parity from a Brisbane-local date is what keeps both of a day's runs
+# on the same side of the flip.
+#
+# Counting days since the epoch rather than using dayofyear() matters: day-of-year 365
+# and day-of-year 1 are both odd, so a dayofyear parity would sit still over New Year in
+# a non-leap year. Epoch days flip every single night.
+PARITY_SQL = ("datediff(date(from_utc_timestamp(current_timestamp(), "
+              f"'{JOB_TIMEZONE}')), DATE'1970-01-01') % 2")
+
+# Stock rows the refresh flips in and out of stock. The two groups alternate rather than
+# move together, so the fulfilment guardrail always has something to hold back and it is
+# a different SKU each day. Group B is the better story: both SKUs are flavoured milk at
+# DC-001, which fulfils every Petrol & Convenience customer, and they go out of stock on
+# the same day the heatwave turns on.
+MUTATE_STOCK_KEYS_A = [   # out of stock on a quiet day
+    ("DC-001", "SKU-0001"),
+    ("DC-003", "SKU-0016"),
+    ("DC-004", "SKU-0011"),
+]
+MUTATE_STOCK_KEYS_B = [   # out of stock on a heatwave day
+    ("DC-001", "SKU-0004"),
+    ("DC-001", "SKU-0034"),
+]
+# DC-001 fulfils all 16 P&C customers, so its weather drives the flavoured-milk boost.
+MUTATE_WEATHER_DCS = ["DC-001", "DC-002"]
+# Every P&C customer in the seed data is in QLD, so that is the fuel signal worth moving.
+MUTATE_FUEL_REGION = "QLD"
+
 # Typed columns per seed table (name, spark_type). Drives a typed CREATE from raw CSV strings.
 SCHEMA = {
     "dim_dc": [("dc_id", "STRING"), ("dc_name", "STRING"), ("region", "STRING"), ("city", "STRING")],
@@ -745,7 +810,7 @@ def build_data_layer(api, catalog, schema):
         )
 
     fq = f"{ident(catalog)}.{ident(schema)}"
-    LOG.step("data", f"Loading {len(SEED_TABLES)} seed tables")
+    LOG.step("data", f"Landing {len(SEED_TABLES)} seed files in bronze")
 
     def load(table):
         _load_table(api, fq, table)
@@ -763,6 +828,10 @@ def build_data_layer(api, catalog, schema):
         table, err = errors[0]
         raise DeployError(f"Failed loading seed table '{table}': {err}")
 
+    LOG.step("data", "Promoting bronze -> silver -> gold")
+    for stmt in promote_statements(fq):
+        api.sql(stmt)
+
     api.sql(f"""CREATE OR REPLACE VIEW {fq}.vw_orders_enriched
       COMMENT 'Order lines enriched with customer segment and product attributes.' AS
       SELECT o.order_id,o.order_date,o.quantity,o.line_revenue,o.channel,o.source_system,
@@ -774,6 +843,7 @@ def build_data_layer(api, catalog, schema):
 
 
 def _load_table(api, fq, table):
+    """Land one seed file in its bronze table, with the usual ingestion metadata."""
     header, rows = load_seed_csv(table)
     cols = SCHEMA[table]
     colnames = [c for c, _ in cols]
@@ -784,9 +854,11 @@ def _load_table(api, fq, table):
             f"  Expected:     {colnames}"
         )
 
+    bronze = ident(BRONZE + table)
     coldefs = ", ".join(f"{ident(n)} {ty}" for n, ty in cols)
-    api.sql(f"CREATE OR REPLACE TABLE {fq}.{ident(table)} ({coldefs}) "
-            f"COMMENT {q(TABLE_COMMENTS.get(table, ''))}")
+    api.sql(f"CREATE OR REPLACE TABLE {fq}.{bronze} "
+            f"({coldefs}, `_source_file` STRING, `_ingested_at` TIMESTAMP) "
+            f"COMMENT {q('Bronze: raw ' + table + '.csv as landed. ' + TABLE_COMMENTS.get(table, ''))}")
 
     select_cols = ", ".join(
         (f"CAST(c{i} AS {typ}) AS {ident(name)}" if typ != "STRING" else f"c{i} AS {ident(name)}")
@@ -795,10 +867,91 @@ def _load_table(api, fq, table):
 
     total = 0
     for values in _value_chunks(rows, cols):
-        api.sql(f"INSERT INTO {fq}.{ident(table)} "
-                f"SELECT {select_cols} FROM (VALUES {', '.join(values)}) AS v({raw_cols})")
+        api.sql(f"INSERT INTO {fq}.{bronze} "
+                f"SELECT {select_cols}, {q(table + '.csv')}, current_timestamp() "
+                f"FROM (VALUES {', '.join(values)}) AS v({raw_cols})")
         total += len(values)
-    LOG.detail(f"{table}: {total} rows")
+    LOG.detail(f"{BRONZE}{table}: {total} rows")
+
+
+def promote_statements(fq):
+    """Bronze -> silver -> gold, as a list of statements.
+
+    The same list is executed at deploy time and written into the scheduled job's SQL
+    file, so there is exactly one definition of what a promotion means.
+    """
+    stmts = []
+    for table in SEED_TABLES:
+        cols = [name for name, _ in SCHEMA[table]]
+        keys = PRIMARY_KEYS[table]
+        key_cols = ", ".join(ident(k) for k in keys)
+        not_null = " AND ".join(f"{ident(k)} IS NOT NULL" for k in keys)
+
+        # Silver: typed, keyed, de-duplicated. Latest row per natural key wins, which is
+        # what makes re-landing bronze safe.
+        select_cols = []
+        for name in cols:
+            if table == "stock_by_dc" and name == "in_stock":
+                # Recompute rather than trust the raw flag: the guardrail is the whole
+                # point of this demo, so it is derived from the numbers every time.
+                select_cols.append("(`on_hand_units` >= `threshold_units`) AS `in_stock`")
+            else:
+                select_cols.append(ident(name))
+        stmts.append(
+            f"CREATE OR REPLACE TABLE {fq}.{ident(SILVER + table)}\n"
+            f"COMMENT {q('Silver: cleaned, typed and de-duplicated ' + table + '.')} AS\n"
+            f"SELECT {', '.join(select_cols)}, current_timestamp() AS `_processed_at`\n"
+            f"FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY {key_cols} "
+            f"ORDER BY `_ingested_at` DESC) AS `_rn`\n"
+            f"      FROM {fq}.{ident(BRONZE + table)} WHERE {not_null})\n"
+            f"WHERE `_rn` = 1"
+        )
+
+        # Gold: exactly the columns the app, Genie space and dashboard already query.
+        gold_cols = ", ".join(ident(name) for name in cols)
+        stmts.append(
+            f"CREATE OR REPLACE TABLE {fq}.{ident(table)}\n"
+            f"COMMENT {q(TABLE_COMMENTS.get(table, ''))} AS\n"
+            f"SELECT {gold_cols} FROM {fq}.{ident(SILVER + table)}"
+        )
+    return stmts
+
+
+def mutate_statements(fq, as_of):
+    """Move the demo on between runs by editing bronze, never gold.
+
+    Parity is derived from the Brisbane calendar day, so the 08:00 and 16:00 runs agree
+    with each other and the story flips overnight.
+    """
+    def keys(pairs):
+        return " OR ".join(f"(`dc_id` = {q(dc)} AND `product_id` = {q(sku)})"
+                           for dc, sku in pairs)
+
+    dcs = ", ".join(q(dc) for dc in MUTATE_WEATHER_DCS)
+    return [
+        # Held back one day, back on the shelf the next.
+        f"UPDATE {fq}.{ident(BRONZE + 'stock_by_dc')}\n"
+        f"SET `on_hand_units` = CASE WHEN {PARITY_SQL} = 0 THEN 0 ELSE `threshold_units` + 50 END,\n"
+        f"    `in_stock` = ({PARITY_SQL} <> 0)\n"
+        f"WHERE {keys(MUTATE_STOCK_KEYS_A)}",
+
+        # The mirror image, so the guardrail is never left with nothing to block.
+        f"UPDATE {fq}.{ident(BRONZE + 'stock_by_dc')}\n"
+        f"SET `on_hand_units` = CASE WHEN {PARITY_SQL} = 1 THEN 0 ELSE `threshold_units` + 50 END,\n"
+        f"    `in_stock` = ({PARITY_SQL} <> 1)\n"
+        f"WHERE {keys(MUTATE_STOCK_KEYS_B)}",
+
+        f"UPDATE {fq}.{ident(BRONZE + 'signal_weather')}\n"
+        f"SET `condition` = CASE WHEN {PARITY_SQL} = 1 THEN 'Hot' ELSE 'Mild' END,\n"
+        f"    `is_heatwave` = ({PARITY_SQL} = 1),\n"
+        f"    `temp_c` = CASE WHEN {PARITY_SQL} = 1 THEN 40.7 ELSE 22.0 END\n"
+        f"WHERE `dc_id` IN ({dcs}) AND `signal_date` = DATE'{as_of}'",
+
+        f"UPDATE {fq}.{ident(BRONZE + 'signal_fuel_index')}\n"
+        f"SET `index_vs_avg` = CASE WHEN {PARITY_SQL} = 1 THEN 1.12 ELSE 0.98 END,\n"
+        f"    `fuel_price_aud` = CASE WHEN {PARITY_SQL} = 1 THEN 1.72 ELSE 1.48 END\n"
+        f"WHERE `region` = {q(MUTATE_FUEL_REGION)} AND `signal_date` = DATE'{as_of}'",
+    ]
 
 
 def _value_chunks(rows, cols, max_chars=180_000):
@@ -836,7 +989,24 @@ def build_reco_engine(api, catalog, schema, model, as_of, rationale=True):
     fq = f"{ident(catalog)}.{ident(schema)}"
 
     LOG.step("engine", f"Scoring candidates (affinity + context boosts, as of {as_of})")
-    api.sql(f"""
+    scored, candidates, oos_view, kpi_view = score_statements(fq, as_of)
+    api.sql(scored)
+
+    LOG.step("engine", "Applying the hard out-of-stock guardrail and top-3 cap")
+    api.sql(candidates)
+    api.sql(oos_view)
+
+    n_recs = int(api.scalar(f"SELECT COUNT(*) FROM {fq}.reco_candidates") or 0)
+    build_rationale(api, fq, model, as_of, n_recs, rationale)
+
+    api.sql(reco_full_view_statement(fq))
+    api.sql(kpi_view)
+    LOG.detail(f"Engine ready: {n_recs} recommendations.")
+
+
+def score_statements(fq, as_of):
+    """The scoring half of the engine: scored -> candidates -> guardrail/KPI views."""
+    scored = f"""
 CREATE OR REPLACE TABLE {fq}.reco_scored AS
 WITH params AS (SELECT DATE'{as_of}' AS as_of),
 seg_totals AS (SELECT segment, COUNT(*) n_cust FROM {fq}.dim_customer GROUP BY segment),
@@ -886,24 +1056,33 @@ final AS (SELECT *,
          WHEN b_cal>0 THEN 'calendar' WHEN b_seg_rest>0 OR b_seg_inst>0 THEN 'segment' ELSE 'segment' END trigger_signal
   FROM scored)
 SELECT *,ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY final_score DESC,peer_adoption DESC,product_id) rank_all
-FROM final WHERE final_score>0""")
+FROM final WHERE final_score>0"""
 
-    LOG.step("engine", "Applying the hard out-of-stock guardrail and top-3 cap")
-    api.sql(f"""CREATE OR REPLACE TABLE {fq}.reco_candidates
+    candidates = f"""CREATE OR REPLACE TABLE {fq}.reco_candidates
       COMMENT 'Final personalized recs: top-3 per customer AFTER hard out-of-stock guardrail.' AS
       SELECT customer_id,product_id,rn AS rank,affinity_score,context_boost,final_score,reco_type,trigger_signal,TRUE AS in_stock
       FROM (SELECT *,ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY final_score DESC,peer_adoption DESC,product_id) rn
-            FROM {fq}.reco_scored WHERE in_stock=TRUE) WHERE rn<=3""")
-    api.sql(f"""CREATE OR REPLACE VIEW {fq}.vw_oos_blocked
+            FROM {fq}.reco_scored WHERE in_stock=TRUE) WHERE rn<=3"""
+
+    oos_view = f"""CREATE OR REPLACE VIEW {fq}.vw_oos_blocked
       COMMENT 'Recs removed by the fulfillment guardrail (in_stock=false).' AS
       SELECT customer_id,customer_name,segment_label,dc_id,product_id,product_name,brand,category,
              final_score,trigger_signal,on_hand_units,threshold_units,rank_all
-      FROM {fq}.reco_scored WHERE in_stock=FALSE AND rank_all<=3""")
+      FROM {fq}.reco_scored WHERE in_stock=FALSE AND rank_all<=3"""
 
-    n_recs = int(api.scalar(f"SELECT COUNT(*) FROM {fq}.reco_candidates") or 0)
-    build_rationale(api, fq, model, as_of, n_recs, rationale)
+    kpi_view = f"""CREATE OR REPLACE VIEW {fq}.vw_reco_kpi_base AS
+      SELECT rc.customer_id,rc.product_id,rc.reco_type,rc.trigger_signal,c.segment_label,p.brand,p.category,
+        CASE WHEN EXISTS (SELECT 1 FROM {fq}.fact_orders o WHERE o.customer_id=rc.customer_id AND o.product_id=rc.product_id) THEN 1 ELSE 0 END converted
+      FROM {fq}.reco_candidates rc JOIN {fq}.dim_customer c ON rc.customer_id=c.customer_id
+      JOIN {fq}.dim_product p ON rc.product_id=p.product_id"""
 
-    api.sql(f"""CREATE OR REPLACE VIEW {fq}.vw_reco_full
+    return [scored, candidates, oos_view, kpi_view]
+
+
+def reco_full_view_statement(fq):
+    """The single object the storefront reads. Depends on reco_rationale, so it is
+    always rebuilt after the rationale, never before."""
+    return f"""CREATE OR REPLACE VIEW {fq}.vw_reco_full
       COMMENT 'One row per surfaced recommendation: candidate + rationale + product + customer.' AS
       SELECT rc.customer_id,c.customer_name,c.segment,c.segment_label,c.dc_id,c.region,c.city,
              rc.product_id,p.product_name,p.brand,p.category,p.pack_size,p.unit_price,
@@ -912,14 +1091,7 @@ FROM final WHERE final_score>0""")
       FROM {fq}.reco_candidates rc
       JOIN {fq}.dim_customer c ON rc.customer_id=c.customer_id
       JOIN {fq}.dim_product p ON rc.product_id=p.product_id
-      LEFT JOIN {fq}.reco_rationale r ON r.customer_id=rc.customer_id AND r.product_id=rc.product_id""")
-
-    api.sql(f"""CREATE OR REPLACE VIEW {fq}.vw_reco_kpi_base AS
-      SELECT rc.customer_id,rc.product_id,rc.reco_type,rc.trigger_signal,c.segment_label,p.brand,p.category,
-        CASE WHEN EXISTS (SELECT 1 FROM {fq}.fact_orders o WHERE o.customer_id=rc.customer_id AND o.product_id=rc.product_id) THEN 1 ELSE 0 END converted
-      FROM {fq}.reco_candidates rc JOIN {fq}.dim_customer c ON rc.customer_id=c.customer_id
-      JOIN {fq}.dim_product p ON rc.product_id=p.product_id""")
-    LOG.detail(f"Engine ready: {n_recs} recommendations.")
+      LEFT JOIN {fq}.reco_rationale r ON r.customer_id=rc.customer_id AND r.product_id=rc.product_id"""
 
 
 # The rationale prompt and the deterministic "why now" chip, shared by both paths.
@@ -944,15 +1116,9 @@ def _rationale_ctx_sql(fq, as_of):
   LEFT JOIN {fq}.signal_calendar cal ON cal.signal_date=DATE'{as_of}')"""
 
 
-def build_rationale(api, fq, model, as_of, n_recs, use_ai):
-    """Generate the one-line 'why we picked this' copy for every recommendation."""
-    if use_ai:
-        LOG.step("engine", f"Writing rationale for {n_recs} recs via ai_query ({model})")
-        LOG.detail("This calls the Foundation Model API once per recommendation; allow a few minutes.")
-        stmt = f"""
-CREATE OR REPLACE TABLE {fq}.reco_rationale
-COMMENT 'FMAPI-generated recommendation rationale. Model: {model}.' AS
-{_rationale_ctx_sql(fq, as_of)}
+def _ai_rationale_select(fq, model, as_of):
+    """The FMAPI query itself. Wrapped by either a CREATE or an INSERT OVERWRITE."""
+    return f"""{_rationale_ctx_sql(fq, as_of)}
 SELECT customer_id,product_id,
   ai_query({q(model)}, CONCAT(
     'You are a Lactalis B2B account assistant writing the one-line justification shown under a "Suggested for You" product card in the MyLactalis ordering portal. ',
@@ -969,8 +1135,55 @@ SELECT customer_id,product_id,
   {_WHY_NOW_SQL} AS why_now_tag,
   {q(model)} AS generated_by
 FROM ctx"""
+
+
+def ai_rationale_statement(fq, model, as_of):
+    """CREATE the rationale table from the Foundation Model API."""
+    return (f"CREATE OR REPLACE TABLE {fq}.reco_rationale\n"
+            f"COMMENT 'FMAPI-generated recommendation rationale. Model: {model}.' AS\n"
+            f"{_ai_rationale_select(fq, model, as_of)}")
+
+
+def ai_rationale_overwrite_statement(fq, model, as_of):
+    """Same FMAPI copy, written over a table that already holds rule-based text.
+
+    The scheduled job writes the deterministic text first so the storefront is never
+    left without copy, then overwrites it with the model's.
+    """
+    return (f"INSERT OVERWRITE {fq}.reco_rationale\n"
+            f"{_ai_rationale_select(fq, model, as_of)}")
+
+
+def rule_rationale_statement(fq, as_of):
+    return f"""CREATE OR REPLACE TABLE {fq}.reco_rationale
+COMMENT 'Rule-based recommendation rationale (Foundation Model API not used).' AS
+{_rationale_ctx_sql(fq, as_of)}
+SELECT customer_id,product_id,
+  {_fallback_why_sql()} AS why_text,
+  {_WHY_NOW_SQL} AS why_now_tag,
+  'rule-based' AS generated_by
+FROM ctx"""
+
+
+def rationale_blank_fill_statement(fq, as_of):
+    """Backfill any row the model returned empty, keeping the rows it did write."""
+    return f"""INSERT OVERWRITE {fq}.reco_rationale
+{_rationale_ctx_sql(fq, as_of)}
+SELECT c.customer_id,c.product_id,
+  COALESCE(NULLIF(TRIM(r.why_text),''), {_fallback_why_sql()}) AS why_text,
+  {_WHY_NOW_SQL} AS why_now_tag,
+  COALESCE(r.generated_by, 'rule-based') AS generated_by
+FROM ctx c LEFT JOIN {fq}.reco_rationale r
+  ON r.customer_id=c.customer_id AND r.product_id=c.product_id"""
+
+
+def build_rationale(api, fq, model, as_of, n_recs, use_ai):
+    """Generate the one-line 'why we picked this' copy for every recommendation."""
+    if use_ai:
+        LOG.step("engine", f"Writing rationale for {n_recs} recs via ai_query ({model})")
+        LOG.detail("This calls the Foundation Model API once per recommendation; allow a few minutes.")
         try:
-            api.sql(stmt, timeout_s=3600)
+            api.sql(ai_rationale_statement(fq, model, as_of), timeout_s=3600)
         except SqlError as e:
             LOG.warn("engine", f"ai_query failed ({e.message[:200]}). Falling back to rule-based rationale.")
             use_ai = False
@@ -981,26 +1194,11 @@ FROM ctx"""
             if blank == 0:
                 return
             LOG.warn("engine", f"{blank} rationale rows came back empty; filling them with rule-based text.")
-            api.sql(f"""INSERT OVERWRITE {fq}.reco_rationale
-{_rationale_ctx_sql(fq, as_of)}
-SELECT c.customer_id,c.product_id,
-  COALESCE(NULLIF(TRIM(r.why_text),''), {_fallback_why_sql()}) AS why_text,
-  {_WHY_NOW_SQL} AS why_now_tag,
-  COALESCE(r.generated_by, 'rule-based') AS generated_by
-FROM ctx c LEFT JOIN {fq}.reco_rationale r
-  ON r.customer_id=c.customer_id AND r.product_id=c.product_id""")
+            api.sql(rationale_blank_fill_statement(fq, as_of))
             return
 
     LOG.step("engine", "Writing rule-based rationale (no Foundation Model call)")
-    api.sql(f"""
-CREATE OR REPLACE TABLE {fq}.reco_rationale
-COMMENT 'Rule-based recommendation rationale (Foundation Model API not used).' AS
-{_rationale_ctx_sql(fq, as_of)}
-SELECT customer_id,product_id,
-  {_fallback_why_sql()} AS why_text,
-  {_WHY_NOW_SQL} AS why_now_tag,
-  'rule-based' AS generated_by
-FROM ctx""")
+    api.sql(rule_rationale_statement(fq, as_of))
 
 
 def describe_rationale_source(api, fq):
@@ -1035,6 +1233,190 @@ def _fallback_why_sql():
     product_name,' from ',brand,
     CASE WHEN reco_type='upsell' THEN ', an easy add to lines you already stock.'
          ELSE ', a strong fit alongside your current range.' END)"""
+
+
+# ---------------------------------------------------------------- step: scheduled pipeline
+
+def pipeline_files(fq, model, as_of, use_ai):
+    """The four SQL files the scheduled job runs, in order.
+
+    Every statement here is the same one deploy.py just executed, so the job cannot
+    drift away from what the one-shot deployment built.
+    """
+    header = ("-- Generated by deploy.py for the Lactalis medallion refresh job.\n"
+              "-- Edit deploy.py, not this file: it is overwritten on every deployment.\n")
+
+    def render(title, statements):
+        body = ";\n\n".join(s.strip() for s in statements)
+        return f"{header}-- {title}\n\n{body};\n"
+
+    if use_ai:
+        # Deterministic copy lands first so the storefront always has a sentence to show,
+        # then the model's text overwrites it, then anything it left blank is refilled.
+        rationale = [
+            rule_rationale_statement(fq, as_of),
+            reco_full_view_statement(fq),
+            ai_rationale_overwrite_statement(fq, model, as_of),
+            rationale_blank_fill_statement(fq, as_of),
+        ]
+    else:
+        rationale = [rule_rationale_statement(fq, as_of), reco_full_view_statement(fq)]
+
+    scored, candidates, oos_view, kpi_view = score_statements(fq, as_of)
+    return [
+        ("01_mutate_bronze.sql", render(
+            "Move the demo on: stock, weather and fuel drift with the Brisbane day.",
+            mutate_statements(fq, as_of))),
+        ("02_promote_medallion.sql", render(
+            "Bronze -> silver -> gold.", promote_statements(fq))),
+        ("03_score_reco.sql", render(
+            "Re-score recommendations and re-apply the out-of-stock guardrail.",
+            [scored, candidates, oos_view, kpi_view])),
+        ("04_write_rationale.sql", render(
+            "Write the 'why we picked this' copy and refresh the storefront view.",
+            rationale)),
+    ]
+
+
+def upload_pipeline_sql(api, path, files):
+    api.post("/api/2.0/workspace/mkdirs", {"path": path})
+    for name, body in files:
+        api.request("POST", "/api/2.0/workspace/import", body={
+            "path": f"{path}/{name}",
+            "format": "RAW",
+            "overwrite": True,
+            "content": base64.b64encode(body.encode("utf-8")).decode("ascii"),
+        })
+    LOG.detail(f"Uploaded {len(files)} SQL files to {path}")
+
+
+def set_job_schedule_paused(api, job_id, paused):
+    """Flip only the schedule's pause flag. The cron and timezone are ours anyway."""
+    api.post("/api/2.1/jobs/update", {"job_id": job_id, "new_settings": {"schedule": {
+        "quartz_cron_expression": JOB_CRON,
+        "timezone_id": JOB_TIMEZONE,
+        "pause_status": "PAUSED" if paused else "UNPAUSED",
+    }}})
+
+
+def quiesce_pipeline_job(api, app_name):
+    """Get the refresh job out of the way before rebuilding the tables underneath it.
+
+    deploy.py rewrites bronze with CREATE OR REPLACE while the job's first task is
+    UPDATE-ing the same tables. Delta rejects that with a concurrency conflict and the
+    deployment dies half-built. Cancelling an in-flight run is not enough on its own: a
+    deployment easily straddles 08:00 or 16:00, and the next trigger would land in the
+    middle of it. So the schedule is paused for the duration and re-armed at the end.
+
+    Returns the job id if it was paused here, so the caller knows to re-arm it. Never
+    fatal: the worst case is a deployment that has to be re-run.
+    """
+    name = job_name(app_name)
+    job_id = _find_job(api, name)
+    if not job_id:
+        return ""
+    path = f"/api/2.1/jobs/runs/list?job_id={job_id}&active_only=true"
+    try:
+        set_job_schedule_paused(api, job_id, True)
+        LOG.step("pipeline", "Paused the refresh schedule until this deployment finishes")
+        LOG.detail("If the deployment stops early the schedule stays paused; re-running "
+                   "deploy.py re-arms it.")
+        if not api.get(path).get("runs"):
+            return job_id
+        LOG.detail("Cancelling the refresh run that is already in flight...")
+        api.post("/api/2.1/jobs/runs/cancel-all", {"job_id": job_id})
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            if not api.get(path).get("runs"):
+                LOG.detail("Refresh job is idle.")
+                return job_id
+            time.sleep(5)
+        LOG.warn("pipeline", "A refresh job run is still active. If this deployment hits a "
+                             "Delta concurrency error, wait for the run to finish and re-run.")
+        return job_id
+    except ApiError as e:
+        LOG.warn("pipeline", f"Could not quiesce the refresh job ({e.message[:120]}). "
+                             f"If this deployment fails on a Delta concurrency error, pause "
+                             f"'{name}' in Workflows and re-run.")
+        return ""
+
+
+def _find_job(api, name):
+    try:
+        r = api.get(f"/api/2.1/jobs/list?name={urllib.parse.quote(name)}&limit=25")
+    except ApiError:
+        return None
+    for job in r.get("jobs", []):
+        if (job.get("settings") or {}).get("name") == name:
+            return job.get("job_id")
+    return None
+
+
+def ensure_pipeline_job(api, catalog, schema, user, model, as_of, use_ai, app_name):
+    """Create or update the twice-daily bronze-to-gold refresh job.
+
+    Returns (job_id, sql_path). Never fatal: a workspace that will not let this user
+    create jobs still gets a complete, working demo, just a static one.
+    """
+    fq = f"{ident(catalog)}.{ident(schema)}"
+    sql_path = f"/Workspace/Users/{user}/{app_name}-pipeline"
+    LOG.step("pipeline", f"Scheduling the medallion refresh ({JOB_CRON}, {JOB_TIMEZONE})")
+
+    try:
+        upload_pipeline_sql(api, sql_path, pipeline_files(fq, model, as_of, use_ai))
+    except ApiError as e:
+        LOG.warn("pipeline", f"Could not upload the pipeline SQL ({e.message[:160]}). "
+                             f"The demo is deployed but will not refresh on a schedule.")
+        return "", ""
+
+    def task(key, filename, depends=None):
+        spec = {
+            "task_key": key,
+            "sql_task": {
+                "warehouse_id": api.warehouse_id,
+                "file": {"path": f"{sql_path}/{filename}", "source": "WORKSPACE"},
+            },
+            "timeout_seconds": 3600,
+        }
+        if depends:
+            spec["depends_on"] = [{"task_key": depends}]
+        return spec
+
+    name = job_name(app_name)
+    settings = {
+        "name": name,
+        "description": (f"Refreshes {catalog}.{schema} bronze -> silver -> gold, re-scores "
+                        f"recommendations and rewrites the AI rationale."),
+        # The tasks are whole-table CREATE OR REPLACE rebuilds, so two runs at once (a
+        # manual trigger overlapping the schedule) would race. Queue them instead.
+        "max_concurrent_runs": 1,
+        "schedule": {
+            "quartz_cron_expression": JOB_CRON,
+            "timezone_id": JOB_TIMEZONE,
+            "pause_status": "UNPAUSED",
+        },
+        "tags": {"demo": "lactalis-reco-engine"},
+        "tasks": [
+            task("mutate_bronze", "01_mutate_bronze.sql"),
+            task("promote_medallion", "02_promote_medallion.sql", "mutate_bronze"),
+            task("score_reco", "03_score_reco.sql", "promote_medallion"),
+            task("write_rationale", "04_write_rationale.sql", "score_reco"),
+        ],
+    }
+
+    try:
+        job_id = _find_job(api, name)
+        if job_id:
+            api.post("/api/2.1/jobs/reset", {"job_id": job_id, "new_settings": settings})
+            LOG.detail(f"Updated existing job {job_id}")
+        else:
+            job_id = api.post("/api/2.1/jobs/create", settings).get("job_id")
+            LOG.detail(f"Created job {job_id}")
+    except ApiError as e:
+        LOG.warn("pipeline", f"Could not create the refresh job ({e.message[:160]}). "
+                             f"The demo is deployed but will not refresh on a schedule.")
+        return "", sql_path
+    return str(job_id), sql_path
 
 
 # ---------------------------------------------------------------- step: metric views
@@ -1519,6 +1901,17 @@ def verify_data(api, catalog, schema):
         ("customers loaded", f"SELECT COUNT(*) FROM {fq}.dim_customer", lambda v: v > 0),
         ("products loaded", f"SELECT COUNT(*) FROM {fq}.dim_product", lambda v: v > 0),
         ("orders loaded", f"SELECT COUNT(*) FROM {fq}.fact_orders", lambda v: v > 0),
+        ("bronze landed", f"SELECT COUNT(*) FROM {fq}.{ident(BRONZE + 'fact_orders')}", lambda v: v > 0),
+        # Every layer must carry the same rows through, or a promotion silently dropped data.
+        ("medallion row counts agree",
+         "SELECT SUM(ABS(d)) FROM (" + " UNION ALL ".join(
+             f"SELECT (SELECT COUNT(*) FROM {fq}.{ident(SILVER + t)}) "
+             f"- (SELECT COUNT(*) FROM {fq}.{ident(t)}) AS d"
+             for t in SEED_TABLES) + ")",
+         lambda v: v == 0),
+        ("no orphan recommendations",
+         f"SELECT COUNT(*) FROM {fq}.reco_candidates r WHERE NOT EXISTS "
+         f"(SELECT 1 FROM {fq}.dim_product p WHERE p.product_id=r.product_id)", lambda v: v == 0),
         ("recommendations built", f"SELECT COUNT(*) FROM {fq}.reco_candidates", lambda v: v > 0),
         ("every customer has recs",
          f"SELECT COUNT(*) FROM {fq}.dim_customer c WHERE NOT EXISTS "
@@ -1792,6 +2185,18 @@ def destroy(api, args, user):
     except ApiError:
         pass
 
+    jname = job_name(args.app_name)
+    job_id = _find_job(api, jname)
+    if job_id:
+        targets.append(("refresh job", f"{jname} ({job_id})"))
+
+    sql_path = f"/Workspace/Users/{user}/{args.app_name}-pipeline"
+    try:
+        api.get(f"/api/2.0/workspace/get-status?path={urllib.parse.quote(sql_path)}")
+        targets.append(("pipeline SQL folder", sql_path))
+    except ApiError:
+        pass
+
     # Only remove a Genie space or dashboard that actually points at the schema being
     # destroyed. Both are found by a fixed name, so a workspace with more than one
     # deployment must not lose the other one's objects.
@@ -1845,12 +2250,20 @@ def destroy(api, args, user):
             return 1
         print()
 
+    # Only now, past the point of no return: a refresh running through the teardown would
+    # recreate tables in the schema being dropped. Pausing before the prompt would leave
+    # the schedule off for anyone who answered no.
+    quiesce_pipeline_job(api, args.app_name)
+
     for kind, name in targets:
         try:
             if kind == "app":
                 api.delete(f"/api/2.0/apps/{name}")
-            elif kind == "app source folder":
+            elif kind in ("app source folder", "pipeline SQL folder"):
                 api.post("/api/2.0/workspace/delete", {"path": name, "recursive": True})
+            elif kind == "refresh job":
+                # Jobs delete is a POST with the id in the body, not a REST DELETE.
+                api.post("/api/2.1/jobs/delete", {"job_id": job_id})
             elif kind == "Genie space":
                 api.delete(f"/api/2.0/genie/spaces/{genie_id}")
             elif kind == "dashboard":
@@ -1885,6 +2298,8 @@ def build_parser():
     p.add_argument("--as-of", default="auto",
                    help="Demo 'as of' date driving the contextual signals (default: auto-detect from the seed data)")
     p.add_argument("--skip-app", action="store_true", help="Build the data, engine, Genie and dashboard but not the app")
+    p.add_argument("--skip-job", action="store_true",
+                   help="Do not create the twice-daily bronze-to-gold refresh job")
     p.add_argument("--skip-genie", action="store_true", help="Do not create the Genie space")
     p.add_argument("--skip-dashboard", action="store_true", help="Do not create the AI/BI dashboard")
     p.add_argument("--no-rationale", action="store_true",
@@ -1931,11 +2346,27 @@ def run(args):
     user, warehouse, model = preflight(api, args)
     catalog = resolve_catalog(api, args.catalog, user, args.yes)
 
+    paused_job = quiesce_pipeline_job(api, args.app_name)
     build_data_layer(api, catalog, args.schema)
     as_of = resolve_as_of(api, catalog, args.schema, args.as_of)
     build_reco_engine(api, catalog, args.schema, model, as_of, rationale=not args.no_rationale)
     rationale_source = describe_rationale_source(api, f"{ident(catalog)}.{ident(args.schema)}")
     views_made, views_total = build_metric_views(api, catalog, args.schema)
+
+    job_id = ""
+    if not args.skip_job:
+        # Writes the full settings, including pause_status UNPAUSED, so this re-arms the
+        # schedule that quiesce_pipeline_job paused.
+        job_id, _ = ensure_pipeline_job(api, catalog, args.schema, user, model, as_of,
+                                        not args.no_rationale, args.app_name)
+    elif paused_job:
+        # --skip-job means "leave the job alone", not "silently turn its schedule off".
+        try:
+            set_job_schedule_paused(api, paused_job, False)
+            LOG.step("pipeline", "Left the existing refresh job as it was and re-armed it")
+        except ApiError as e:
+            LOG.warn("pipeline", f"Could not re-arm the refresh schedule ({e.message[:120]}). "
+                                 f"Unpause '{job_name(args.app_name)}' in Workflows.")
 
     # An object that was asked for but could not be built is a failure, not a skip, and the
     # summary and exit code have to tell those two apart.
@@ -1986,6 +2417,10 @@ def run(args):
     print(f"  Dashboard        : {dashboard_id or ('FAILED (see above)' if dashboard_failed else '(skipped)')}")
     if dashboard_id:
         print(f"                     {api.host}/dashboardsv3/{dashboard_id}/published")
+    print(f"  Refresh job      : {job_id or '(skipped)'}")
+    if job_id:
+        print(f"                     {JOB_CRON} {JOB_TIMEZONE} (08:00 and 16:00 daily)")
+        print(f"                     {api.host}/jobs/{job_id}")
     print(f"  App              : {app_url or '(skipped)'}")
     print(f"  Data checks      : {'ALL PASSED' if data_ok else 'SOME FAILED (see above)'}")
     if app_ok is not None:

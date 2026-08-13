@@ -9,10 +9,12 @@ Source systems (simulated, source-tagged)
   External signals ... weather, fuel price index, holiday calendar
         |
         v
-  BRONZE  (bz_*)      raw, source-tagged           <- loaded from deploy_seed/*.csv
+  BRONZE  (bz_*)      raw, source-tagged, _source_file + _ingested_at
+                      <- landed from deploy_seed/*.csv
         |
         v
-  SILVER  (sv_*)      cleaned, de-duplicated, typed
+  SILVER  (sv_*)      cleaned, typed, de-duplicated on natural keys,
+                      in_stock recomputed from on_hand vs threshold
         |
         v
   GOLD    dim_customer, dim_product, dim_dc,
@@ -31,6 +33,50 @@ Source systems (simulated, source-tagged)
         +--> Lakeview dashboard (campaign performance)
         +--> Databricks App     (storefront + engine console)
 ```
+
+## Scheduled refresh
+
+A Databricks Job, `[Lactalis] Medallion Refresh`, walks the whole medallion twice a day at
+**08:00 and 16:00 Australia/Brisbane** (`0 0 8,16 * * ?`). It is four chained SQL warehouse
+tasks, capped at one concurrent run so two rebuilds never race:
+
+```
+mutate_bronze -> promote_medallion -> score_reco -> write_rationale
+```
+
+| Task | What it does |
+|---|---|
+| `mutate_bronze` | Edits `bz_stock_by_dc` and the signal tables so the demo moves between runs |
+| `promote_medallion` | `bz_* -> sv_* -> gold`, every seed table |
+| `score_reco` | Rebuilds `reco_scored`, `reco_candidates`, `vw_oos_blocked`, `vw_reco_kpi_base` |
+| `write_rationale` | Rule-based copy first, then `ai_query` over the top, then `vw_reco_full` |
+
+The mutation is deterministic from the **Brisbane calendar day** (days since the epoch, mod 2),
+so the 08:00 and 16:00 runs agree with each other and the story flips every night:
+
+| | quiet day | heatwave day |
+|---|---|---|
+| DC-001 / DC-002 weather | Mild, 22.0C | Hot, heatwave, 40.7C |
+| QLD fuel `index_vs_avg` | 0.98 (below the 1.05 boost) | 1.12 (above it) |
+| Out of stock | SKU-0001, SKU-0011, SKU-0016 | SKU-0004, SKU-0034 |
+
+Epoch days rather than day-of-year, because day-of-year 365 and day-of-year 1 are both odd,
+so a day-of-year parity would sit still over New Year in a non-leap year.
+
+The two stock groups alternate rather than move together, so the fulfilment guardrail always
+has something to hold back, and it is a different SKU each day. Customers, products, orders,
+favourites and the holiday calendar are never mutated.
+
+`deploy.py` writes the four SQL files to
+`/Workspace/Users/<you>/<app-name>-pipeline/` and upserts the job over the Jobs API. The SQL
+is generated from the same Python that the one-shot deployment runs, so the scheduled job and
+the deployment can never drift apart. `--skip-job` leaves the schedule out.
+
+Re-deploying pauses the schedule first and cancels any run already in flight, then re-arms it
+at the end. Without that, a deployment that straddles 08:00 or 16:00 rebuilds bronze with
+`CREATE OR REPLACE` while the job holds an `UPDATE` on the same tables, and Delta fails the
+whole thing with a concurrency conflict. If a deployment stops early the schedule is left
+paused; re-running `deploy.py` re-arms it.
 
 ## Recommendation scoring
 
