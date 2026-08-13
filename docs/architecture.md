@@ -72,6 +72,12 @@ favourites and the holiday calendar are never mutated.
 is generated from the same Python that the one-shot deployment runs, so the scheduled job and
 the deployment can never drift apart. `--skip-job` leaves the schedule out.
 
+Re-deploying pauses the schedule first and cancels any run already in flight, then re-arms it
+at the end. Without that, a deployment that straddles 08:00 or 16:00 rebuilds bronze with
+`CREATE OR REPLACE` while the job holds an `UPDATE` on the same tables, and Delta fails the
+whole thing with a concurrency conflict. If a deployment stops early the schedule is left
+paused; re-running `deploy.py` re-arms it.
+
 ## Recommendation scoring
 
 ```

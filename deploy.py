@@ -1279,33 +1279,54 @@ def upload_pipeline_sql(api, path, files):
     LOG.detail(f"Uploaded {len(files)} SQL files to {path}")
 
 
+def set_job_schedule_paused(api, job_id, paused):
+    """Flip only the schedule's pause flag. The cron and timezone are ours anyway."""
+    api.post("/api/2.1/jobs/update", {"job_id": job_id, "new_settings": {"schedule": {
+        "quartz_cron_expression": JOB_CRON,
+        "timezone_id": JOB_TIMEZONE,
+        "pause_status": "PAUSED" if paused else "UNPAUSED",
+    }}})
+
+
 def quiesce_pipeline_job(api):
-    """Stop any in-flight refresh before rebuilding the tables underneath it.
+    """Get the refresh job out of the way before rebuilding the tables underneath it.
 
     deploy.py rewrites bronze with CREATE OR REPLACE while the job's first task is
     UPDATE-ing the same tables. Delta rejects that with a concurrency conflict and the
-    deployment dies half-built. A refresh that is about to be overwritten anyway is
-    worth nothing, so cancel it and wait for it to actually stop.
+    deployment dies half-built. Cancelling an in-flight run is not enough on its own: a
+    deployment easily straddles 08:00 or 16:00, and the next trigger would land in the
+    middle of it. So the schedule is paused for the duration and re-armed at the end.
+
+    Returns the job id if it was paused here, so the caller knows to re-arm it. Never
+    fatal: the worst case is a deployment that has to be re-run.
     """
     job_id = _find_job(api, JOB_NAME)
     if not job_id:
-        return
+        return ""
     path = f"/api/2.1/jobs/runs/list?job_id={job_id}&active_only=true"
     try:
+        set_job_schedule_paused(api, job_id, True)
+        LOG.step("pipeline", "Paused the refresh schedule until this deployment finishes")
+        LOG.detail("If the deployment stops early the schedule stays paused; re-running "
+                   "deploy.py re-arms it.")
         if not api.get(path).get("runs"):
-            return
-        LOG.step("pipeline", "Cancelling the refresh job run that is already in flight")
+            return job_id
+        LOG.detail("Cancelling the refresh run that is already in flight...")
         api.post("/api/2.1/jobs/runs/cancel-all", {"job_id": job_id})
         deadline = time.time() + 300
         while time.time() < deadline:
             if not api.get(path).get("runs"):
                 LOG.detail("Refresh job is idle.")
-                return
+                return job_id
             time.sleep(5)
         LOG.warn("pipeline", "A refresh job run is still active. If this deployment hits a "
                              "Delta concurrency error, wait for the run to finish and re-run.")
+        return job_id
     except ApiError as e:
-        LOG.warn("pipeline", f"Could not check for running refresh jobs ({e.message[:120]}).")
+        LOG.warn("pipeline", f"Could not quiesce the refresh job ({e.message[:120]}). "
+                             f"If this deployment fails on a Delta concurrency error, pause "
+                             f"'{JOB_NAME}' in Workflows and re-run.")
+        return ""
 
 
 def _find_job(api, name):
@@ -2308,7 +2329,7 @@ def run(args):
     user, warehouse, model = preflight(api, args)
     catalog = resolve_catalog(api, args.catalog, user, args.yes)
 
-    quiesce_pipeline_job(api)
+    paused_job = quiesce_pipeline_job(api)
     build_data_layer(api, catalog, args.schema)
     as_of = resolve_as_of(api, catalog, args.schema, args.as_of)
     build_reco_engine(api, catalog, args.schema, model, as_of, rationale=not args.no_rationale)
@@ -2317,8 +2338,18 @@ def run(args):
 
     job_id = ""
     if not args.skip_job:
+        # Writes the full settings, including pause_status UNPAUSED, so this re-arms the
+        # schedule that quiesce_pipeline_job paused.
         job_id, _ = ensure_pipeline_job(api, catalog, args.schema, user, model, as_of,
                                         not args.no_rationale, args.app_name)
+    elif paused_job:
+        # --skip-job means "leave the job alone", not "silently turn its schedule off".
+        try:
+            set_job_schedule_paused(api, paused_job, False)
+            LOG.step("pipeline", "Left the existing refresh job as it was and re-armed it")
+        except ApiError as e:
+            LOG.warn("pipeline", f"Could not re-arm the refresh schedule ({e.message[:120]}). "
+                                 f"Unpause '{JOB_NAME}' in Workflows.")
 
     # An object that was asked for but could not be built is a failure, not a skip, and the
     # summary and exit code have to tell those two apart.
