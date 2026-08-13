@@ -115,8 +115,10 @@ Deterministic per **Brisbane calendar day** so both 08:00 and 16:00 runs on the 
 **Parity expression (required — do not use bare `current_date()`):** warehouse sessions default to UTC. The 08:00 Brisbane run is still the previous UTC calendar day, so a naive `current_date()` would flip parity between the two daily runs. Use:
 
 ```sql
-dayofyear(date(from_utc_timestamp(current_timestamp(), 'Australia/Brisbane'))) % 2 AS parity
+datediff(date(from_utc_timestamp(current_timestamp(), 'Australia/Brisbane')), DATE'1970-01-01') % 2 AS parity
 ```
+
+Epoch days, not `dayofyear()`: day-of-year 365 and day-of-year 1 are both odd, so a day-of-year parity would fail to flip over New Year in a non-leap year.
 
 ### 1. Stock (`bz_stock_by_dc`)
 
@@ -124,8 +126,8 @@ Two groups that **alternate** rather than move together. If all demo SKUs flippe
 
 | Group | dc_id / product_id | Out of stock when |
 |---|---|---|
-| A | DC-001/SKU-0001, DC-003/SKU-0016, DC-004/SKU-0011 | `parity = 0` (even day) |
-| B | DC-001/SKU-0004, DC-001/SKU-0034 | `parity = 1` (odd day) |
+| A | DC-001/SKU-0001, DC-003/SKU-0016, DC-004/SKU-0011 | `parity = 0` (quiet day) |
+| B | DC-001/SKU-0004, DC-001/SKU-0034 | `parity = 1` (heatwave day) |
 
 Group B is the stronger story: both are flavoured milk at DC-001, the DC that fulfils every P&C customer, and they go out of stock on the same day the heatwave turns on.
 
@@ -235,4 +237,4 @@ one-shot deployment always run byte-identical SQL:
 | Bronze behavior | Mutate stock/signals each run (deterministic day parity) |
 | Pipeline shape | Multi-task Job, `sql_task.file` + workspace-uploaded `pipeline/*.sql` |
 | Gold names | Unchanged (app compatibility) |
-| Parity clock | `dayofyear(date(from_utc_timestamp(current_timestamp(), 'Australia/Brisbane'))) % 2` |
+| Parity clock | `datediff(date(from_utc_timestamp(current_timestamp(), 'Australia/Brisbane')), DATE'1970-01-01') % 2` |

@@ -202,8 +202,8 @@ SQL tasks: `mutate_bronze` → `promote_medallion` → `score_reco` → `write_r
 Each run nudges bronze (stock levels, weather, the fuel index), re-promotes bronze → silver →
 gold, re-scores every recommendation, and rewrites the `ai_query` rationale. The changes are
 deterministic from the Brisbane calendar day, so both of a day's runs agree and the story
-flips overnight: on even days the weather is mild and one set of SKUs is out of stock, on odd
-days there is a heatwave, fuel is above average, and a different set is out of stock. See
+flips overnight: one day the weather is mild and one set of SKUs is out of stock, the next
+there is a heatwave, fuel is above average, and a different set is out of stock. See
 [docs/architecture.md](docs/architecture.md) for the full table.
 
 Nothing about the app changes: it keeps reading the same gold tables and `vw_reco_full`.

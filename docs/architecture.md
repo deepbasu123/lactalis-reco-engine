@@ -51,14 +51,17 @@ mutate_bronze -> promote_medallion -> score_reco -> write_rationale
 | `score_reco` | Rebuilds `reco_scored`, `reco_candidates`, `vw_oos_blocked`, `vw_reco_kpi_base` |
 | `write_rationale` | Rule-based copy first, then `ai_query` over the top, then `vw_reco_full` |
 
-The mutation is deterministic from the **Brisbane calendar day**, so the 08:00 and 16:00 runs
-agree with each other and the story flips overnight:
+The mutation is deterministic from the **Brisbane calendar day** (days since the epoch, mod 2),
+so the 08:00 and 16:00 runs agree with each other and the story flips every night:
 
-| | even day | odd day |
+| | quiet day | heatwave day |
 |---|---|---|
 | DC-001 / DC-002 weather | Mild, 22.0C | Hot, heatwave, 40.7C |
 | QLD fuel `index_vs_avg` | 0.98 (below the 1.05 boost) | 1.12 (above it) |
 | Out of stock | SKU-0001, SKU-0011, SKU-0016 | SKU-0004, SKU-0034 |
+
+Epoch days rather than day-of-year, because day-of-year 365 and day-of-year 1 are both odd,
+so a day-of-year parity would sit still over New Year in a non-leap year.
 
 The two stock groups alternate rather than move together, so the fulfilment guardrail always
 has something to hold back, and it is a different SKU each day. Customers, products, orders,

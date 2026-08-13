@@ -119,20 +119,24 @@ JOB_TIMEZONE = "Australia/Brisbane"  # the demo is AU-based; Brisbane has no DST
 # Session time zone on a warehouse is UTC, and 08:00 Brisbane is still the previous UTC
 # day. Deriving the parity from a Brisbane-local date is what keeps both of a day's runs
 # on the same side of the flip.
-PARITY_SQL = ("dayofyear(date(from_utc_timestamp(current_timestamp(), "
-              f"'{JOB_TIMEZONE}'))) % 2")
+#
+# Counting days since the epoch rather than using dayofyear() matters: day-of-year 365
+# and day-of-year 1 are both odd, so a dayofyear parity would sit still over New Year in
+# a non-leap year. Epoch days flip every single night.
+PARITY_SQL = ("datediff(date(from_utc_timestamp(current_timestamp(), "
+              f"'{JOB_TIMEZONE}')), DATE'1970-01-01') % 2")
 
 # Stock rows the refresh flips in and out of stock. The two groups alternate rather than
 # move together, so the fulfilment guardrail always has something to hold back and it is
 # a different SKU each day. Group B is the better story: both SKUs are flavoured milk at
 # DC-001, which fulfils every Petrol & Convenience customer, and they go out of stock on
 # the same day the heatwave turns on.
-MUTATE_STOCK_KEYS_EVEN_OOS = [
+MUTATE_STOCK_KEYS_A = [   # out of stock on a quiet day
     ("DC-001", "SKU-0001"),
     ("DC-003", "SKU-0016"),
     ("DC-004", "SKU-0011"),
 ]
-MUTATE_STOCK_KEYS_ODD_OOS = [
+MUTATE_STOCK_KEYS_B = [   # out of stock on a heatwave day
     ("DC-001", "SKU-0004"),
     ("DC-001", "SKU-0034"),
 ]
@@ -914,17 +918,17 @@ def mutate_statements(fq, as_of):
 
     dcs = ", ".join(q(dc) for dc in MUTATE_WEATHER_DCS)
     return [
-        # Out of stock on even Brisbane days, back on the shelf on odd ones.
+        # Held back one day, back on the shelf the next.
         f"UPDATE {fq}.{ident(BRONZE + 'stock_by_dc')}\n"
         f"SET `on_hand_units` = CASE WHEN {PARITY_SQL} = 0 THEN 0 ELSE `threshold_units` + 50 END,\n"
         f"    `in_stock` = ({PARITY_SQL} <> 0)\n"
-        f"WHERE {keys(MUTATE_STOCK_KEYS_EVEN_OOS)}",
+        f"WHERE {keys(MUTATE_STOCK_KEYS_A)}",
 
         # The mirror image, so the guardrail is never left with nothing to block.
         f"UPDATE {fq}.{ident(BRONZE + 'stock_by_dc')}\n"
         f"SET `on_hand_units` = CASE WHEN {PARITY_SQL} = 1 THEN 0 ELSE `threshold_units` + 50 END,\n"
         f"    `in_stock` = ({PARITY_SQL} <> 1)\n"
-        f"WHERE {keys(MUTATE_STOCK_KEYS_ODD_OOS)}",
+        f"WHERE {keys(MUTATE_STOCK_KEYS_B)}",
 
         f"UPDATE {fq}.{ident(BRONZE + 'signal_weather')}\n"
         f"SET `condition` = CASE WHEN {PARITY_SQL} = 1 THEN 'Hot' ELSE 'Mild' END,\n"
@@ -1273,6 +1277,35 @@ def upload_pipeline_sql(api, path, files):
             "content": base64.b64encode(body.encode("utf-8")).decode("ascii"),
         })
     LOG.detail(f"Uploaded {len(files)} SQL files to {path}")
+
+
+def quiesce_pipeline_job(api):
+    """Stop any in-flight refresh before rebuilding the tables underneath it.
+
+    deploy.py rewrites bronze with CREATE OR REPLACE while the job's first task is
+    UPDATE-ing the same tables. Delta rejects that with a concurrency conflict and the
+    deployment dies half-built. A refresh that is about to be overwritten anyway is
+    worth nothing, so cancel it and wait for it to actually stop.
+    """
+    job_id = _find_job(api, JOB_NAME)
+    if not job_id:
+        return
+    path = f"/api/2.1/jobs/runs/list?job_id={job_id}&active_only=true"
+    try:
+        if not api.get(path).get("runs"):
+            return
+        LOG.step("pipeline", "Cancelling the refresh job run that is already in flight")
+        api.post("/api/2.1/jobs/runs/cancel-all", {"job_id": job_id})
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            if not api.get(path).get("runs"):
+                LOG.detail("Refresh job is idle.")
+                return
+            time.sleep(5)
+        LOG.warn("pipeline", "A refresh job run is still active. If this deployment hits a "
+                             "Delta concurrency error, wait for the run to finish and re-run.")
+    except ApiError as e:
+        LOG.warn("pipeline", f"Could not check for running refresh jobs ({e.message[:120]}).")
 
 
 def _find_job(api, name):
@@ -2268,11 +2301,14 @@ def run(args):
     if args.destroy:
         me = api.get("/api/2.0/preview/scim/v2/Me").get("userName", "")
         ensure_warehouse(api, args.warehouse_id)
+        # Otherwise a refresh mid-teardown recreates tables in the schema being dropped.
+        quiesce_pipeline_job(api)
         return destroy(api, args, me)
 
     user, warehouse, model = preflight(api, args)
     catalog = resolve_catalog(api, args.catalog, user, args.yes)
 
+    quiesce_pipeline_job(api)
     build_data_layer(api, catalog, args.schema)
     as_of = resolve_as_of(api, catalog, args.schema, args.as_of)
     build_reco_engine(api, catalog, args.schema, model, as_of, rationale=not args.no_rationale)
