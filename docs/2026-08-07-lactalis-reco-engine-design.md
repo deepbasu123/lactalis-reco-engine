@@ -45,8 +45,10 @@ Genie is the *internal* analytics surface.
 
 ## SCHEMA CONTRACT (authoritative — all workstreams build to this)
 
-All tables in `lactalis_catalog.reco`. Medallion: bronze (`bz_*`, raw + source tag),
-silver (`sv_*`, cleaned), gold (`dim_*`/`fact_*`/`signal_*`/`reco_*`, app-facing).
+All tables in `lactalis_catalog.reco`. Medallion: bronze (`bz_*`, raw + source tag +
+`_source_file`/`_ingested_at`), silver (`sv_*`, cleaned, de-duplicated, `_processed_at`),
+gold (`dim_*`/`fact_*`/`signal_*`/`reco_*`, app-facing). A twice-daily job walks the whole
+chain; see `docs/superpowers/specs/2026-08-14-lactalis-medallion-pipeline-design.md`.
 
 ### Gold — app-facing tables
 
