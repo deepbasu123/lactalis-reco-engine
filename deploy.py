@@ -20,8 +20,14 @@ Authentication is delegated to the Databricks SDK, so this accepts whatever the
 Databricks CLI accepts: browser OAuth, CLI profiles, DATABRICKS_* environment
 variables, service principals, or a personal access token.
 
-Requirements:
-    pip install databricks-sdk
+Requirements (optional, but the most reliable way to sign in):
+
+    pip install -r requirements.txt
+
+    ...plus the Databricks CLI, which is a standalone program, not a pip package:
+      Windows : winget install Databricks.DatabricksCLI
+      macOS   : brew install databricks/tap/databricks
+      Linux   : curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
 
 Quick start (Windows, macOS, Linux):
 
@@ -35,7 +41,9 @@ Other ways to authenticate:
     set DATABRICKS_HOST=... && set DATABRICKS_TOKEN=... && python deploy.py
 
 Without databricks-sdk installed the script still runs and falls back to prompting
-for a workspace URL and personal access token.
+for a workspace URL and personal access token. That path works, but a token is only
+valid in the workspace that issued it, which is the usual reason a deploy fails at
+the first API call.
 
 Re-running is safe. Tables are CREATE OR REPLACE, and the app, Genie space, dashboard
 and grants are all upserted.
@@ -446,7 +454,12 @@ CLI_LOGIN_HINT = (
     "  The most reliable way to authenticate is the Databricks CLI, which opens a\n"
     "  browser and signs you in with your normal workspace login:\n"
     "    databricks auth login --host https://your-workspace.cloud.databricks.com\n"
-    "  Then re-run this script with no --host/--token at all."
+    "  Then re-run this script with no --host/--token at all.\n"
+    "  The CLI is a standalone program, not a pip package. To install it:\n"
+    "    Windows : winget install Databricks.DatabricksCLI\n"
+    "    macOS   : brew install databricks/tap/databricks\n"
+    "    Linux   : curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli"
+    "/main/install.sh | sh"
 )
 
 
@@ -463,8 +476,14 @@ def resolve_auth(args):
     if cfg is not None:
         return cfg.host, cfg.authenticate, (cfg.auth_type or "databricks-sdk")
 
-    # No usable SDK credentials. A person at a terminal can still paste a token;
-    # anything else (CI, piped output) gets the SDK's own message, which names the fix.
+    # The SDK is optional, so credentials that need no resolving still have to work
+    # without it. Otherwise installing nothing would break --host/--token and the
+    # DATABRICKS_* variables, which is the one combination CI relies on.
+    static = _static_token_auth(args)
+    if static:
+        host, token, source = static
+        return host, (lambda: {"Authorization": f"Bearer {token}"}), f"pat ({source})"
+
     if sys.stdin.isatty():
         if sdk_error:
             LOG.warn("auth", f"Could not authenticate through the Databricks SDK: {sdk_error}")
@@ -478,6 +497,35 @@ def resolve_auth(args):
         "  Non-interactive alternatives: --profile NAME, or set DATABRICKS_HOST and\n"
         "  DATABRICKS_TOKEN, or --host URL --token TOKEN."
     )
+
+
+def _static_token_auth(args):
+    """Host plus token taken straight from flags or the environment, no SDK needed.
+
+    Returns (host, token, source) or None. Only reached when the SDK could not resolve
+    anything, since with the SDK installed it handles both of these itself.
+    """
+    host = normalize_host(args.host or "")
+    token = sanitize_token(args.token or "")
+    if host and token:
+        return host, token, "--host/--token"
+
+    env_host = normalize_host(os.environ.get("DATABRICKS_HOST", ""))
+    env_token = sanitize_token(os.environ.get("DATABRICKS_TOKEN", ""))
+    if env_host and env_token:
+        return env_host, env_token, "DATABRICKS_HOST/DATABRICKS_TOKEN"
+
+    # One side supplied without the other is a mistake worth naming, because the next
+    # thing the caller sees would otherwise be an unexplained prompt or a 401.
+    if (host or env_host) and not (token or env_token):
+        raise DeployError(
+            "A workspace URL was supplied but no token, and no other credentials could "
+            "be found.\n"
+            "  Pass --token as well, set DATABRICKS_TOKEN, or install the tooling and "
+            "sign in:\n"
+            f"{CLI_LOGIN_HINT}"
+        )
+    return None
 
 
 def _sdk_config(args):

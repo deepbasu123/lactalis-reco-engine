@@ -29,11 +29,27 @@ dashboard, the app, and every permission the app needs. There are no manual foll
 1. **Python 3.9 or newer** on your machine. No Node.js, nothing to compile.
    (Tested on Python 3.9, 3.10, 3.13 and 3.14.)
 2. **A Databricks workspace** with a SQL warehouse, and Unity Catalog enabled.
-3. **A way to sign in.** The recommended option is the Databricks CLI, which signs you in
-   through your browser with your normal workspace login and avoids tokens entirely:
+3. **A way to sign in.** Browser sign-in is strongly recommended, because it avoids tokens
+   entirely. It needs two things installed:
 
 ```
-pip install databricks-sdk
+pip install -r requirements.txt
+```
+
+and the **Databricks CLI**, which is a standalone program, not a pip package:
+
+| Platform | Install |
+|---|---|
+| Windows | `winget install Databricks.DatabricksCLI` then restart Command Prompt |
+| macOS | `brew install databricks/tap/databricks` |
+| Linux | `curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh \| sh` |
+
+Check it with `databricks -v`; you want 0.205.0 or above. Do **not** use
+`pip install databricks-cli`, which installs the deprecated legacy CLI.
+
+Then sign in once and deploy:
+
+```
 databricks auth login --host https://your-workspace.cloud.databricks.com
 python deploy.py
 ```
@@ -42,10 +58,11 @@ Authentication is handled by the Databricks SDK, so anything the Databricks CLI 
 works here: browser OAuth, CLI profiles (`--profile NAME`), `DATABRICKS_HOST` /
 `DATABRICKS_TOKEN` environment variables, service principals, or a personal access token.
 
-If you would rather not install anything, the script still runs with only the Python
-standard library and will prompt for a workspace URL and personal access token instead.
-Browser sign-in is more reliable, because a token only works in the workspace that
-created it and is easy to truncate on paste.
+**Is `requirements.txt` mandatory?** No. Without it the script still runs on the Python
+standard library alone and prompts for a workspace URL and personal access token. But a
+token only works in the workspace that issued it and is easy to truncate on paste, which
+is the most common reason a deployment fails before it starts. Browser sign-in avoids
+that whole class of problem, and it needs both the pip install and the CLI.
 
 ### Windows: step by step
 
@@ -81,11 +98,22 @@ Databricks, up to and including `.com`. For example:
 https://your-company.cloud.databricks.com
 ```
 
-Install the Databricks tooling and sign in. A browser window opens and you log in exactly
-as you normally would:
+Install the Databricks tooling. Run this from the folder you extracted in Step 2, then
+restart Command Prompt so the CLI is on your PATH:
 
 ```
-pip install databricks-sdk databricks-cli
+pip install -r requirements.txt
+winget install Databricks.DatabricksCLI
+```
+
+The CLI is a standalone program, so it comes from `winget`, not from pip. Confirm it
+installed with `databricks -v` (you want 0.205.0 or above). If your machine has no
+`winget`, use `choco install databricks-cli`, or download the Windows `.zip` from the
+[Databricks CLI releases](https://github.com/databricks/cli/releases).
+
+Now sign in. A browser window opens and you log in exactly as you normally would:
+
+```
 databricks auth login --host https://your-company.cloud.databricks.com
 ```
 
@@ -132,7 +160,12 @@ Same thing, using `python3`:
 ```bash
 git clone https://github.com/<your-org>/lactalis-reco-engine.git
 cd lactalis-reco-engine
-pip3 install databricks-sdk
+pip3 install -r requirements.txt
+
+# The CLI is a standalone program, not a pip package
+brew install databricks/tap/databricks                                                    # macOS
+curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh    # Linux
+
 databricks auth login --host https://your-company.cloud.databricks.com
 python3 deploy.py
 ```
@@ -310,7 +343,8 @@ on the Genie space, and `CAN_READ` on the dashboard.
 | What you see | What it means and what to do |
 |---|---|
 | `'python' is not recognized...` | Python is not on your PATH. Reinstall it and tick "Add python.exe to PATH", or use `py deploy.py` instead. |
-| **Anything returning HTTP 400 or 401 on every call** | Stop troubleshooting the individual step. The credentials are being refused. The fix that works nearly always: `pip install databricks-sdk databricks-cli` then `databricks auth login --host <your-workspace-url>`, then re-run `python deploy.py` with no `--host` or `--token`. |
+| **Anything returning HTTP 400 or 401 on every call** | Stop troubleshooting the individual step. The credentials are being refused. The fix that works nearly always: `pip install -r requirements.txt`, install the Databricks CLI (`winget install Databricks.DatabricksCLI` on Windows), then `databricks auth login --host <your-workspace-url>` and re-run `python deploy.py` with no `--host` or `--token`. |
+| `'databricks' is not recognized` | The Databricks CLI is not installed or not on your PATH. It is a standalone program, so `pip install databricks-cli` is **not** the right command (that installs the deprecated legacy CLI). Use `winget install Databricks.DatabricksCLI` on Windows, then restart Command Prompt. |
 | `Databricks rejected the credentials (401)` | The token is wrong, expired, or belongs to a different workspace. Sign in with `databricks auth login` instead, or generate a fresh token in the right workspace. |
 | `Databricks is refusing this token` / warehouse list returns HTTP 400 | The PAT is rejected on every call: it was created in a different workspace, or truncated/quoted on paste. A token only works in the workspace that issued it. `--user` and `--warehouse-id` will not fix this. Use `databricks auth login`. |
 | `cannot configure default credentials` | The SDK found no stored login. Run `databricks auth login --host <your-workspace-url>`, or pass `--profile`, or set `DATABRICKS_HOST` and `DATABRICKS_TOKEN`. |
