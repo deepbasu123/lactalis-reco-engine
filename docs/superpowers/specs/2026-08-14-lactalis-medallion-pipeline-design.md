@@ -186,7 +186,9 @@ Job / task `parameters` on each `sql_task` (and/or placeholders already substitu
 4. After first successful full build, **upsert Job** via Jobs REST API `2.1`: `GET .../jobs/list?name=...` → `POST .../jobs/create` or `POST .../jobs/reset` (body: `job_id` + `new_settings`). Note: Jobs delete/reset are **POST**, not HTTP DELETE — do not reuse `api.delete()` path-style helpers naively.
 5. Deployment summary prints job id and schedule.
 6. **`destroy`**: `POST /api/2.1/jobs/delete` with `{ "job_id": ... }` after looking up by name, alongside other resource teardown.
-7. Keep stdlib-only, no Databricks CLI requirement.
+7. Keep the deploy body stdlib-only. (Superseded for auth: credentials are now resolved by
+   `databricks-sdk`, matching databricks-quest, so `databricks auth login` works. The SDK is
+   an optional import and the deployer still falls back to a token prompt without it.)
 
 ### SQL artifact layout
 

@@ -13,20 +13,29 @@ Reproduces the entire demo inside ANY Databricks workspace, in a single command:
                       resource bound and every permission its service principal needs
   7. Verification   : data integrity checks PLUS live HTTP calls against the running app
 
-Everything runs over the Databricks REST API using only the Python standard library.
-The Databricks CLI is NOT required, nothing is compiled, and no npm install runs locally.
-That makes it work the same on Windows, macOS and Linux.
+Everything runs over the Databricks REST API. Nothing is compiled and no npm install
+runs locally, so it works the same on Windows, macOS and Linux.
+
+Authentication is delegated to the Databricks SDK, so this accepts whatever the
+Databricks CLI accepts: browser OAuth, CLI profiles, DATABRICKS_* environment
+variables, service principals, or a personal access token.
+
+Requirements:
+    pip install databricks-sdk
 
 Quick start (Windows, macOS, Linux):
 
+    databricks auth login --host https://xxx.cloud.databricks.com
     python deploy.py
 
-    ...and answer the two prompts (workspace URL + personal access token).
+Other ways to authenticate:
 
-Non-interactive:
-
-    python deploy.py --host https://xxx.cloud.databricks.com --token dapi...
     python deploy.py --profile my-cli-profile
+    python deploy.py --host https://xxx.cloud.databricks.com --token dapi...
+    set DATABRICKS_HOST=... && set DATABRICKS_TOKEN=... && python deploy.py
+
+Without databricks-sdk installed the script still runs and falls back to prompting
+for a workspace URL and personal access token.
 
 Re-running is safe. Tables are CREATE OR REPLACE, and the app, Genie space, dashboard
 and grants are all upserted.
@@ -34,7 +43,6 @@ and grants are all upserted.
 
 import argparse
 import base64
-import configparser
 import csv
 import getpass
 import json
@@ -42,7 +50,6 @@ import os
 import posixpath
 import re
 import ssl
-import subprocess
 import sys
 import threading
 import time
@@ -253,10 +260,19 @@ RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
 class Api:
-    def __init__(self, host, token):
+    def __init__(self, host, credentials, auth_label=""):
         self.host = normalize_host(host)
-        self.token = token
         self.warehouse_id = None
+        self.auth_label = auth_label
+        # A callable rather than a fixed string: OAuth access tokens are short-lived and
+        # a full deploy outlives them, so every request asks for current headers.
+        self._credentials = credentials
+
+    @property
+    def token(self):
+        """The current bearer token, for the few callers that need the raw value."""
+        header = self._credentials().get("Authorization", "")
+        return header[7:] if header.startswith("Bearer ") else header
 
     # -- transport ------------------------------------------------
 
@@ -270,7 +286,7 @@ class Api:
         else:
             data = None
 
-        headers = {"Authorization": f"Bearer {self.token}"}
+        headers = dict(self._credentials())
         if data is not None:
             headers["Content-Type"] = content_type
 
@@ -404,41 +420,105 @@ def normalize_host(raw):
 
 # ---------------------------------------------------------------- auth
 
+def sanitize_token(raw):
+    """Strip the decorations people paste along with a token.
+
+    A PAT copied out of a browser, terminal or chat message often arrives wrapped in
+    quotes, prefixed with 'Bearer', or split across lines. Databricks answers a
+    malformed Authorization header with a blanket HTTP 400 on every endpoint, which
+    reads like a broken workspace rather than a bad paste, so clean it here.
+    """
+    t = (raw or "").strip()
+    t = "".join(t.split())  # kill embedded newlines/spaces from wrapped pastes
+    if t[:1] in "\"'" and t[-1:] == t[:1] and len(t) > 1:
+        t = t[1:-1].strip()
+    if t.lower().startswith("bearer"):
+        t = t[len("bearer"):].strip()
+    for prefix in ("token=", "DATABRICKS_TOKEN=", "--token="):
+        if t.lower().startswith(prefix.lower()):
+            t = t[len(prefix):].strip()
+    return t.strip("\"'")
+
+
+CLI_LOGIN_HINT = (
+    "  The most reliable way to authenticate is the Databricks CLI, which opens a\n"
+    "  browser and signs you in with your normal workspace login:\n"
+    "    databricks auth login --host https://your-workspace.cloud.databricks.com\n"
+    "  Then re-run this script with no --host/--token at all."
+)
+
+
 def resolve_auth(args):
-    """Return (host, token). Tries flags, env, CLI profile, then interactive prompts."""
-    if args.host and args.token:
-        return normalize_host(args.host), args.token
+    """Return (host, credentials, label) where credentials() yields request headers.
 
+    Authentication is delegated to the Databricks SDK so this script accepts exactly
+    what the Databricks CLI accepts: OAuth from `databricks auth login`, CLI profiles,
+    DATABRICKS_* environment variables, service principals, and personal access
+    tokens. Hand-rolling this is what made personal access tokens the only practical
+    option, and a PAT pasted from the wrong workspace fails on every endpoint.
+    """
+    cfg, sdk_error = _sdk_config(args)
+    if cfg is not None:
+        return cfg.host, cfg.authenticate, (cfg.auth_type or "databricks-sdk")
+
+    # No usable SDK credentials. A person at a terminal can still paste a token;
+    # anything else (CI, piped output) gets the SDK's own message, which names the fix.
+    if sys.stdin.isatty():
+        if sdk_error:
+            LOG.warn("auth", f"Could not authenticate through the Databricks SDK: {sdk_error}")
+        host, token = _prompt_auth(args.host)
+        return host, (lambda: {"Authorization": f"Bearer {token}"}), "pat (prompted)"
+
+    raise DeployError(
+        "Could not authenticate to Databricks and this is not an interactive terminal.\n"
+        f"  {sdk_error or 'No credentials were supplied.'}\n"
+        f"{CLI_LOGIN_HINT}\n"
+        "  Non-interactive alternatives: --profile NAME, or set DATABRICKS_HOST and\n"
+        "  DATABRICKS_TOKEN, or --host URL --token TOKEN."
+    )
+
+
+def _sdk_config(args):
+    """Resolve credentials through the Databricks SDK's unified auth chain.
+
+    Returns (config, None) on success and (None, reason) when nothing could be
+    resolved, so the caller decides whether to prompt or fail.
+    """
+    try:
+        from databricks.sdk.core import Config  # type: ignore[import-not-found]
+    except ImportError:
+        return None, ("the databricks-sdk package is not installed "
+                      "(pip install databricks-sdk)")
+
+    kwargs = {}
     if args.profile:
-        host, token, reason = _from_profile(args.profile, args.host)
-        if token:
-            return host, token
-        raise DeployError(
-            f"Could not get a token for CLI profile '{args.profile}'.\n"
-            f"  Reason: {reason}\n"
-            f"  Try:  databricks auth login --host <workspace-url> --profile {args.profile}\n"
-            f"  Or run without --profile and paste a personal access token when prompted."
-        )
+        kwargs["profile"] = args.profile
+    if args.host:
+        kwargs["host"] = normalize_host(args.host)
+    if args.token:
+        # An explicit token means the caller wants PAT auth; pin it so the SDK does not
+        # silently prefer an unrelated cached CLI login for the same host.
+        kwargs["token"] = sanitize_token(args.token)
+        kwargs["auth_type"] = "pat"
 
-    env_host = os.environ.get("DATABRICKS_HOST")
-    env_token = os.environ.get("DATABRICKS_TOKEN")
-    if env_host and env_token:
-        return normalize_host(env_host), env_token
+    try:
+        cfg = Config(**kwargs)
+        cfg.authenticate()  # resolve now, so failures surface here and not mid-deploy
+    except Exception as e:
+        reason = str(e).strip().splitlines()
+        detail = " ".join(line.strip() for line in reason if line.strip())
+        if args.profile:
+            raise DeployError(
+                f"Could not authenticate with CLI profile '{args.profile}'.\n"
+                f"  {detail}\n"
+                f"  Re-authenticate that profile:\n"
+                f"    databricks auth login --host <workspace-url> --profile {args.profile}"
+            )
+        return None, detail
 
-    env_profile = os.environ.get("DATABRICKS_CONFIG_PROFILE")
-    if env_profile:
-        host, token, reason = _from_profile(env_profile, args.host)
-        if token:
-            return host, token
-        LOG.warn("preflight", f"DATABRICKS_CONFIG_PROFILE is set to '{env_profile}' but no "
-                              f"token could be obtained: {reason}")
-
-    if not sys.stdin.isatty():
-        raise DeployError(
-            "No credentials supplied and this is not an interactive terminal.\n"
-            "  Pass --host and --token, or --profile, or set DATABRICKS_HOST and DATABRICKS_TOKEN."
-        )
-    return _prompt_auth(args.host)
+    if not cfg.host:
+        return None, "no workspace URL was configured"
+    return cfg, None
 
 
 def _prompt_auth(default_host):
@@ -448,6 +528,7 @@ def _prompt_auth(default_host):
     print("  Workspace URL looks like: https://your-workspace.cloud.databricks.com")
     print("  Token: in Databricks go to your avatar (top right) > Settings > Developer")
     print("         > Access tokens > Manage > Generate new token")
+    print("  The token must be created in the same workspace as the URL above.")
     print()
     host = ""
     while not host:
@@ -457,59 +538,11 @@ def _prompt_auth(default_host):
             print("  Please enter the workspace URL.")
     token = ""
     while not token:
-        token = getpass.getpass("  Personal access token (input hidden): ").strip()
+        token = sanitize_token(getpass.getpass("  Personal access token (input hidden): "))
         if not token:
             print("  Please paste your token.")
     print()
     return host, token
-
-
-def _from_profile(profile, host_override):
-    """Read host/token for a CLI profile. Uses ~/.databrickscfg first, CLI second.
-
-    Returns (host, token, reason). `reason` explains a missing token so the caller can
-    tell the user what to actually fix.
-    """
-    host = normalize_host(host_override) if host_override else ""
-    token = None
-    reason = f"no profile named '{profile}' was found and the Databricks CLI returned nothing"
-
-    cfg_path = os.environ.get("DATABRICKS_CONFIG_FILE") or os.path.join(
-        os.path.expanduser("~"), ".databrickscfg")
-    if os.path.exists(cfg_path):
-        cp = configparser.ConfigParser()
-        try:
-            cp.read(cfg_path, encoding="utf-8")
-            if cp.has_section(profile):
-                host = host or normalize_host(cp.get(profile, "host", fallback=""))
-                token = cp.get(profile, "token", fallback=None)
-        except configparser.Error as e:
-            reason = f"{cfg_path} could not be parsed ({e})"
-
-    if not token:
-        # OAuth (U2M) profiles keep no token in the file; the CLI mints one on demand.
-        # Keep why it failed: "the CLI is not installed" and "the profile has expired" need
-        # different fixes, and the caller turns this into the user-facing message.
-        try:
-            out = subprocess.run(
-                ["databricks", "auth", "token", "--profile", profile],
-                capture_output=True, text=True, timeout=120,
-                shell=(os.name == "nt"),
-            )
-            if out.returncode == 0:
-                token = json.loads(out.stdout).get("access_token")
-                if not token:
-                    reason = "the Databricks CLI returned no access token for that profile"
-            else:
-                lines = (out.stderr or out.stdout or "").strip().splitlines()
-                reason = lines[-1] if lines else f"the Databricks CLI exited with {out.returncode}"
-        except FileNotFoundError:
-            reason = "the Databricks CLI is not installed or not on PATH"
-        except subprocess.TimeoutExpired:
-            reason = "the Databricks CLI did not respond within 120s"
-        except (ValueError, OSError) as e:
-            reason = str(e)
-    return host, token, (None if token else reason)
 
 
 # ---------------------------------------------------------------- helpers
@@ -549,41 +582,7 @@ def load_seed_csv(name):
 def preflight(api, args):
     """Validate the connection, pick a warehouse, pick a rationale model."""
     LOG.step("preflight", f"Connecting to {api.host}")
-    user = ""
-    try:
-        me = api.get("/api/2.0/preview/scim/v2/Me")
-        user = me.get("userName", "")
-    except ApiError as e:
-        if e.status in (401, 403):
-            raise DeployError(
-                f"Databricks rejected the credentials ({e.status}).\n"
-                f"  Host: {api.host}\n"
-                f"  Check the workspace URL is right and the token has not expired or been revoked.\n"
-                f"  Generate a fresh token: avatar > Settings > Developer > Access tokens."
-            )
-        # A 400 here is not a credentials problem (bad tokens return 401). The usual cause is
-        # a brand-new workspace where SCIM "Me" is not resolvable yet. The only thing this
-        # call gives us is the caller's username for /Workspace/Users/<user>/ paths, so let
-        # the caller supply it with --user and carry on rather than dying at the first step.
-        if not args.user:
-            raise DeployError(
-                f"Could not look up your username from {api.host} "
-                f"(GET /api/2.0/preview/scim/v2/Me returned {e.status}).\n"
-                f"  This is not a token-scope problem: an invalid token returns 401, not "
-                f"{e.status}. On a brand-new workspace this endpoint can reject the lookup\n"
-                f"  before user identity is fully provisioned.\n"
-                f"  Re-run and pass your workspace login email so the deployer can build your\n"
-                f"  workspace paths without the lookup, for example:\n"
-                f"    python deploy.py --user you@company.com   (plus your usual flags)"
-            )
-        LOG.detail(f"Username lookup returned {e.status}; using --user {args.user}")
-
-    if args.user:
-        user = args.user  # explicit override always wins
-    if not user:
-        raise DeployError(
-            "Could not determine your username. Re-run with --user you@company.com."
-        )
+    user = resolve_username(api, args.user)
     LOG.detail(f"Authenticated as {user}")
 
     # /Workspace/Users/<user>/ is normally created on first browser login. On a brand-new
@@ -601,6 +600,98 @@ def preflight(api, args):
     check_sql_quoting(api)
     model = pick_model(api, args.model)
     return user, warehouse, model
+
+
+def _probe_credentials(api):
+    """Check whether an ordinary workspace API accepts this token.
+
+    Returns (None, "") when the call succeeds, otherwise (status, message). Listing
+    warehouses is read-only and available to any user, so a rejection here means the
+    credentials are bad rather than the specific endpoint being fussy.
+    """
+    try:
+        api.get("/api/2.0/sql/warehouses")
+        return None, ""
+    except ApiError as e:
+        return e.status, e.message
+    except DeployError as e:
+        return -1, str(e)
+
+
+def resolve_username(api, override=""):
+    """Return the caller's workspace username (login email).
+
+    Prefer SCIM Me. On some brand-new workspaces that call returns 400 even with a valid
+    token; in that case --user must be supplied so we can still build /Workspace/Users/
+    paths. An explicit --user always wins.
+    """
+    user = ""
+    try:
+        me = api.get("/api/2.0/preview/scim/v2/Me")
+        user = me.get("userName", "") or ""
+    except ApiError as e:
+        if e.status in (401, 403):
+            raise DeployError(
+                f"Databricks rejected the credentials ({e.status}).\n"
+                f"  Host: {api.host}\n"
+                f"  Check the workspace URL is right and the token has not expired or been revoked.\n"
+                f"  Generate a fresh token: avatar > Settings > Developer > Access tokens."
+            )
+        if e.status == 400:
+            # A 400 here has two very different causes, so ask a second endpoint which
+            # one it is. If an ordinary workspace API also refuses us, the credentials
+            # are the problem and --user will not save the run; it only pushes the
+            # failure downstream where it surfaces as a confusing "not found".
+            probe_status, probe_message = _probe_credentials(api)
+            if probe_status is not None:
+                raise DeployError(
+                    f"Databricks is refusing this token on {api.host}.\n"
+                    f"  GET /api/2.0/preview/scim/v2/Me      -> HTTP 400\n"
+                    f"  GET /api/2.0/sql/warehouses          -> HTTP {probe_status}: {probe_message}\n"
+                    f"\n"
+                    f"  Every call is being rejected, so this is the credentials, not a missing\n"
+                    f"  warehouse or a missing --user flag. 'all-apis' on the token is the right\n"
+                    f"  choice; the usual causes are:\n"
+                    f"    1. The token was created in a different workspace. A PAT only works on\n"
+                    f"       the workspace that issued it. Open {api.host} itself,\n"
+                    f"       then avatar > Settings > Developer > Access tokens > Generate new token.\n"
+                    f"    2. The token was truncated or altered on paste. Generate a fresh one and\n"
+                    f"       copy it in a single action, with no quotes and no 'Bearer' prefix.\n"
+                    f"\n"
+                    f"  To confirm which, run this and check it returns your email:\n"
+                    f"    curl -s -H \"Authorization: Bearer <token>\" \\\n"
+                    f"      {api.host}/api/2.0/preview/scim/v2/Me"
+                )
+            if not override:
+                raise DeployError(
+                    f"Could not look up your username from {api.host} "
+                    f"(GET /api/2.0/preview/scim/v2/Me returned 400).\n"
+                    f"  Other workspace APIs accept this token, so the credentials are fine:\n"
+                    f"  on a brand-new workspace this endpoint can reject the lookup before\n"
+                    f"  user identity is fully provisioned.\n"
+                    f"  Re-run and pass your workspace login email so the deployer can build your\n"
+                    f"  workspace paths without the lookup, for example:\n"
+                    f"    python deploy.py --user you@company.com   (plus your usual flags)"
+                )
+            LOG.detail(f"Username lookup returned 400 but the workspace API works; "
+                       f"using --user {override}")
+        else:
+            # 5xx / unexpected: do not pretend --user is the cure.
+            raise DeployError(
+                f"Could not look up your username from {api.host} "
+                f"(GET /api/2.0/preview/scim/v2/Me returned {e.status}: {e.message}).\n"
+                f"  This looks like a transient Databricks error, not a missing username.\n"
+                f"  Wait a minute and re-run. If it keeps failing, pass "
+                f"--user you@company.com and try again."
+            )
+
+    if override:
+        user = override
+    if not user:
+        raise DeployError(
+            "Could not determine your username. Re-run with --user you@company.com."
+        )
+    return user
 
 
 # Product names contain apostrophes and the seed loader builds SQL by interpolation, so a
@@ -634,13 +725,38 @@ def ensure_warehouse(api, requested):
     if requested:
         try:
             wh = api.get(f"/api/2.0/sql/warehouses/{requested}")
-        except ApiError:
+        except ApiError as e:
+            # Only a 404 really means "no such warehouse". Reporting a 400/401/403 as
+            # "not found" sends people hunting for the wrong problem: it is the
+            # credentials being rejected, not the id being wrong.
+            if e.status in (400, 401, 403):
+                raise DeployError(
+                    f"Databricks rejected the request for SQL warehouse '{requested}' "
+                    f"(HTTP {e.status}).\n"
+                    f"  {e.message}\n"
+                    f"  The warehouse id is probably fine. This is the workspace refusing the\n"
+                    f"  credentials or the permission. Re-run without --warehouse-id to confirm\n"
+                    f"  the same error appears on the warehouse list, then generate a fresh\n"
+                    f"  token inside this same workspace and paste it with no quotes."
+                )
             raise DeployError(
-                f"SQL warehouse '{requested}' was not found in this workspace.\n"
+                f"SQL warehouse '{requested}' was not found in this workspace (HTTP {e.status}).\n"
                 f"  Omit --warehouse-id to let the deployer pick one automatically."
             )
     else:
-        whs = api.get("/api/2.0/sql/warehouses").get("warehouses", [])
+        try:
+            whs = api.get("/api/2.0/sql/warehouses").get("warehouses", [])
+        except ApiError as e:
+            if e.status in (400, 401, 403):
+                raise DeployError(
+                    f"Databricks rejected the SQL warehouse list call (HTTP {e.status}).\n"
+                    f"  {e.message}\n"
+                    f"  Host: {api.host}\n"
+                    f"  This is the credentials being refused, not a missing warehouse.\n"
+                    f"  Create a fresh token inside this same workspace (avatar > Settings >\n"
+                    f"  Developer > Access tokens) and paste it without quotes or a Bearer prefix."
+                )
+            raise
         if not whs:
             raise DeployError(
                 "This workspace has no SQL warehouse.\n"
@@ -2361,8 +2477,8 @@ def validate_names(args):
 
 def run(args):
     validate_names(args)
-    host, token = resolve_auth(args)
-    api = Api(host, token)
+    host, credentials, auth_label = resolve_auth(args)
+    api = Api(host, credentials, auth_label)
 
     print()
     print("=" * 72)
@@ -2370,15 +2486,17 @@ def run(args):
     print(f"  Lactalis B2B Personalized Recommendation Engine - {title}")
     print("=" * 72)
     print(f"  Workspace : {api.host}")
+    print(f"  Auth      : {api.auth_label}")
     print(f"  Target    : {args.catalog}.{args.schema}")
     print(f"  App       : {args.app_name}")
     print("=" * 72)
     print()
 
     if args.destroy:
-        me = api.get("/api/2.0/preview/scim/v2/Me").get("userName", "")
+        user = resolve_username(api, args.user)
+        LOG.detail(f"Authenticated as {user}")
         ensure_warehouse(api, args.warehouse_id)
-        return destroy(api, args, me)
+        return destroy(api, args, user)
 
     user, warehouse, model = preflight(api, args)
     catalog = resolve_catalog(api, args.catalog, user, args.yes)

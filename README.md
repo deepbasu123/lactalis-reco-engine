@@ -26,11 +26,26 @@ dashboard, the app, and every permission the app needs. There are no manual foll
 
 ### What you need
 
-1. **Python 3.9 or newer** on your machine. Nothing else is installed: no Databricks CLI,
-   no Node.js, no `pip install`. The script uses only the Python standard library.
+1. **Python 3.9 or newer** on your machine. No Node.js, nothing to compile.
    (Tested on Python 3.9, 3.10, 3.13 and 3.14.)
 2. **A Databricks workspace** with a SQL warehouse, and Unity Catalog enabled.
-3. **A personal access token** for that workspace (instructions below).
+3. **A way to sign in.** The recommended option is the Databricks CLI, which signs you in
+   through your browser with your normal workspace login and avoids tokens entirely:
+
+```
+pip install databricks-sdk
+databricks auth login --host https://your-workspace.cloud.databricks.com
+python deploy.py
+```
+
+Authentication is handled by the Databricks SDK, so anything the Databricks CLI accepts
+works here: browser OAuth, CLI profiles (`--profile NAME`), `DATABRICKS_HOST` /
+`DATABRICKS_TOKEN` environment variables, service principals, or a personal access token.
+
+If you would rather not install anything, the script still runs with only the Python
+standard library and will prompt for a workspace URL and personal access token instead.
+Browser sign-in is more reliable, because a token only works in the workspace that
+created it and is easy to truncate on paste.
 
 ### Windows: step by step
 
@@ -57,7 +72,7 @@ On the GitHub page for this repository, click the green **Code** button, then
 **Extract All...**. Note where you extracted it, for example
 `C:\Users\yourname\Downloads\lactalis-reco-engine`.
 
-**Step 3 - Get your workspace URL and a token**
+**Step 3 - Sign in to your workspace**
 
 Your **workspace URL** is what you see in the browser address bar when you are signed in to
 Databricks, up to and including `.com`. For example:
@@ -66,12 +81,30 @@ Databricks, up to and including `.com`. For example:
 https://your-company.cloud.databricks.com
 ```
 
-For the **token**, in Databricks click your avatar in the top-right corner, then:
+Install the Databricks tooling and sign in. A browser window opens and you log in exactly
+as you normally would:
+
+```
+pip install databricks-sdk databricks-cli
+databricks auth login --host https://your-company.cloud.databricks.com
+```
+
+This stores the login on your machine, so you only do it once.
+
+<details>
+<summary>No CLI? Use a personal access token instead</summary>
+
+In Databricks click your avatar in the top-right corner, then:
 
 **Settings** > **Developer** > **Access tokens** > **Manage** > **Generate new token**
 
 Give it any comment, leave the lifetime as-is, and click Generate. **Copy the token
 immediately**, because Databricks only shows it once. It looks like `dapi1a2b3c...`.
+
+The token must be generated **inside the same workspace URL** you give the script. A token
+from a different workspace is rejected on every call.
+
+</details>
 
 **Step 4 - Run the deployer**
 
@@ -82,8 +115,11 @@ cd C:\Users\yourname\Downloads\lactalis-reco-engine
 python deploy.py
 ```
 
-It will ask for your workspace URL and then your token. The token is hidden as you type or
-paste it. That is deliberate, it is not frozen. Press Enter and it runs.
+If you signed in with `databricks auth login`, it picks that up and starts immediately. The
+banner prints which sign-in it used, for example `Auth : databricks-cli`.
+
+If you have no stored login, it asks for your workspace URL and then a token. The token is
+hidden as you type or paste it. That is deliberate, it is not frozen. Press Enter and it runs.
 
 > **Paste tip:** in Command Prompt, right-click pastes. Ctrl+V may not work.
 
@@ -96,22 +132,31 @@ Same thing, using `python3`:
 ```bash
 git clone https://github.com/<your-org>/lactalis-reco-engine.git
 cd lactalis-reco-engine
+pip3 install databricks-sdk
+databricks auth login --host https://your-company.cloud.databricks.com
 python3 deploy.py
 ```
 
 ### Running it without prompts
 
-If you would rather not be prompted, pass the credentials directly:
+Any of these work, and none of them prompt:
 
 ```bash
+# A named Databricks CLI profile
+python deploy.py --profile <your-cli-profile>
+
+# Environment variables
+export DATABRICKS_HOST=https://your-company.cloud.databricks.com
+export DATABRICKS_TOKEN=dapi1a2b3c...
+python deploy.py
+
+# Credentials on the command line
 python deploy.py --host https://your-company.cloud.databricks.com --token dapi1a2b3c...
 ```
 
-Or, if you already use the Databricks CLI:
-
-```bash
-python deploy.py --profile <your-cli-profile>
-```
+Sign-in is handled by the Databricks SDK, so a service principal configured for the SDK
+(`DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET`) works too. The deployer prints which
+method it used in the `Auth` line of the banner.
 
 ---
 
@@ -244,7 +289,13 @@ on the Genie space, and `CAN_READ` on the dashboard.
 | What you see | What it means and what to do |
 |---|---|
 | `'python' is not recognized...` | Python is not on your PATH. Reinstall it and tick "Add python.exe to PATH", or use `py deploy.py` instead. |
-| `Databricks rejected the credentials (401)` | The token is wrong, expired, or belongs to a different workspace. Generate a fresh one. |
+| **Anything returning HTTP 400 or 401 on every call** | Stop troubleshooting the individual step. The credentials are being refused. The fix that works nearly always: `pip install databricks-sdk databricks-cli` then `databricks auth login --host <your-workspace-url>`, then re-run `python deploy.py` with no `--host` or `--token`. |
+| `Databricks rejected the credentials (401)` | The token is wrong, expired, or belongs to a different workspace. Sign in with `databricks auth login` instead, or generate a fresh token in the right workspace. |
+| `Databricks is refusing this token` / warehouse list returns HTTP 400 | The PAT is rejected on every call: it was created in a different workspace, or truncated/quoted on paste. A token only works in the workspace that issued it. `--user` and `--warehouse-id` will not fix this. Use `databricks auth login`. |
+| `cannot configure default credentials` | The SDK found no stored login. Run `databricks auth login --host <your-workspace-url>`, or pass `--profile`, or set `DATABRICKS_HOST` and `DATABRICKS_TOKEN`. |
+| `Could not authenticate with CLI profile '...'` | That profile is missing or its login expired. Re-run `databricks auth login --host <url> --profile <name>`. |
+| `Could not look up your username ... Me returned 400` | Only when other APIs still work. On some brand-new workspaces SCIM Me is not ready yet. Re-run with `--user you@company.com` (your workspace login email). |
+| `SQL warehouse '...' was not found` | That warehouse id does not exist in this workspace (often copied from another demo). Omit `--warehouse-id` and let the deployer pick one. |
 | `Could not reach https://...` | Check the workspace URL. If you are behind a corporate proxy, set it first: `set HTTPS_PROXY=http://proxy:port` (Windows) or `export HTTPS_PROXY=...` (macOS/Linux). |
 | `This workspace has no SQL warehouse` | Create one in **SQL** > **SQL Warehouses** > **Create SQL warehouse** (Serverless is recommended), then re-run. |
 | `Cannot create catalog ... no CREATE CATALOG` | Not a failure. The deployer falls back to a catalog you can write to and carries on. Pass `--catalog <name>` to choose. |
@@ -263,9 +314,13 @@ terminal is the message to act on.
 ```
 python deploy.py [options]
 
+  (no auth flags)         Use the stored `databricks auth login` session. Recommended.
+  --profile NAME          Use a named Databricks CLI profile
   --host URL              Workspace URL
-  --token TOKEN           Personal access token
-  --profile NAME          Use a Databricks CLI profile instead of host/token
+  --token TOKEN           Personal access token (use with --host)
+  --user EMAIL            Your workspace login email. Only needed when the automatic
+                          username lookup fails (GET .../scim/v2/Me returns 400 on some
+                          brand-new workspaces). Used to build /Workspace/Users/<you>/ paths.
 
   --catalog NAME          Catalog to deploy into      (default: lactalis_catalog)
   --schema NAME           Schema to deploy into       (default: reco)
@@ -393,7 +448,8 @@ Re-run `python deploy.py` afterwards to push the rebuilt frontend.
 
 ```
 lactalis-reco-engine/
-  deploy.py              one-shot end-to-end deployer (standard library only)
+  deploy.py              one-shot end-to-end deployer (stdlib + databricks-sdk for auth)
+  requirements.txt       deployer dependencies
   deploy_seed/           seed data (CSV) the deployer loads
   app/                   Node.js/Express + React (Vite) dual-view app
     server/              Express backend (SQL, auth, Genie, routes)

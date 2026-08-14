@@ -1,0 +1,14 @@
+# Lactalis B2B Personalized Recommendation Engine - deployer dependencies
+#
+#   pip install -r requirements.txt
+#
+# Only needed by deploy.py, and only for authentication. Everything else in the
+# deployer uses the Python standard library. With the SDK installed you can sign in
+# the same way the Databricks CLI does:
+#
+#   databricks auth login --host https://your-workspace.cloud.databricks.com
+#   python deploy.py
+#
+# Without it, deploy.py falls back to prompting for a workspace URL and a personal
+# access token.
+databricks-sdk>=0.30.0
