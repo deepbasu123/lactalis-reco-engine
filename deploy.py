@@ -116,6 +116,8 @@ PRIMARY_KEYS = {
     "signal_calendar": ["signal_date"],
 }
 
+DEFAULT_APP_NAME = "lactalis-reco-engine"
+
 # ---- scheduled refresh -------------------------------------------------------------
 # A Databricks Job walks bronze -> silver -> gold -> reco -> ai_query twice a day, so the
 # demo keeps moving instead of being frozen at whatever deploy.py built.
@@ -1772,13 +1774,32 @@ def _find_dashboard(api, name):
 
 # ---------------------------------------------------------------- step: app
 
-def ensure_app(api, app_name, warehouse_id):
-    """Create the app (with its SQL warehouse resource bound) or update it in place."""
-    resources = [{
-        "name": "sql-warehouse",
+APP_WAREHOUSE_RESOURCE = "sql-warehouse"
+
+
+def merge_app_resources(existing, warehouse_id):
+    """Add our SQL warehouse resource without discarding resources someone else bound.
+
+    The apps API replaces the whole resources list on update, so sending only ours would
+    silently unbind a secret or model endpoint the app already depended on. That matters
+    most when deploying on top of an app the customer built themselves.
+    """
+    ours = {
+        "name": APP_WAREHOUSE_RESOURCE,
         "description": "SQL warehouse serving the Lactalis gold layer.",
         "sql_warehouse": {"id": warehouse_id, "permission": "CAN_USE"},
-    }]
+    }
+    kept = [r for r in (existing or []) if r.get("name") != APP_WAREHOUSE_RESOURCE]
+    return kept + [ours]
+
+
+def ensure_app(api, app_name, warehouse_id, must_exist=False):
+    """Create the app (with its SQL warehouse resource bound) or update it in place.
+
+    With must_exist, a missing app is an error rather than a prompt to create one: the
+    caller asked to deploy onto something that already exists, and quietly creating a
+    second app under a mistyped name is worse than stopping.
+    """
     description = "Lactalis B2B Personalized Recommendation Engine (MyLactalis storefront + Engine Console)."
 
     try:
@@ -1789,8 +1810,24 @@ def ensure_app(api, app_name, warehouse_id):
             raise
         app, exists = None, False
 
+    if not exists and must_exist:
+        raise DeployError(
+            f"No Databricks App named '{app_name}' exists in this workspace.\n"
+            f"  --existing-app only deploys onto an app that is already there, so nothing\n"
+            f"  was created. Check the spelling in Compute > Apps, or drop --existing-app\n"
+            f"  to let the deployer create the app for you."
+        )
+
     if exists:
-        LOG.step("app", f"Reusing existing app '{app_name}'")
+        if must_exist:
+            LOG.step("app", f"Deploying onto existing app '{app_name}'")
+            LOG.detail("Its current source is replaced by this demo; bound resources are kept.")
+        else:
+            LOG.step("app", f"Reusing existing app '{app_name}'")
+        resources = merge_app_resources(app.get("resources"), warehouse_id)
+        carried = len(resources) - 1
+        if carried:
+            LOG.detail(f"Keeping {carried} resource(s) already bound to this app.")
         try:
             app = api.patch(f"/api/2.0/apps/{app_name}",
                             {"description": description, "resources": resources})
@@ -1808,14 +1845,15 @@ def ensure_app(api, app_name, warehouse_id):
             app = api.post("/api/2.0/apps", {
                 "name": app_name,
                 "description": description,
-                "resources": resources,
+                "resources": merge_app_resources(None, warehouse_id),
             })
         except ApiError as e:
             raise DeployError(
                 f"Could not create the Databricks App '{app_name}' ({e.status}: {e.message[:250]}).\n"
                 f"  Databricks Apps must be enabled for this workspace and you need permission\n"
                 f"  to create apps. Check Compute > Apps in the workspace UI.\n"
-                f"  If the name is taken by someone else, re-run with --app-name <other-name>."
+                f"  If the app already exists and you meant to deploy onto it, re-run with\n"
+                f"  --existing-app {app_name}."
             )
 
     sp_client_id = app.get("service_principal_client_id") or app.get("id")
@@ -2324,7 +2362,11 @@ def destroy(api, args, user):
 
     try:
         api.get(f"/api/2.0/apps/{args.app_name}")
-        targets.append(("app", args.app_name))
+        if args.existing_app:
+            LOG.step("destroy", f"Leaving app '{args.app_name}' in place (it was not created "
+                                f"by this deployer).")
+        else:
+            targets.append(("app", args.app_name))
     except ApiError:
         pass
 
@@ -2447,7 +2489,15 @@ def build_parser():
     p.add_argument("--warehouse-id", help="SQL warehouse id (default: auto-pick a serverless one)")
     p.add_argument("--model", default="auto",
                    help="Foundation Model endpoint for the rationale (default: auto-pick an available one)")
-    p.add_argument("--app-name", default="lactalis-reco-engine", help="Databricks App name")
+    # Defaulted in validate_names, not here: leaving it None is the only way to tell
+    # "not passed" from "passed the default value", which --existing-app has to know.
+    p.add_argument("--app-name", default=None,
+                   help=f"Databricks App name (default: {DEFAULT_APP_NAME})")
+    p.add_argument("--existing-app", metavar="NAME",
+                   help="Deploy on top of an app that already exists, instead of creating one. "
+                        "The app must already be there: if it is not, the deployer stops rather "
+                        "than quietly creating a second app under a mistyped name. --destroy "
+                        "leaves it in place, because it is not ours to delete.")
     p.add_argument("--as-of", default="auto",
                    help="Demo 'as of' date driving the contextual signals (default: auto-detect from the seed data)")
     p.add_argument("--skip-app", action="store_true", help="Build the data, engine, Genie and dashboard but not the app")
@@ -2470,9 +2520,22 @@ def validate_names(args):
         raise DeployError(f"--catalog '{args.catalog}' must be lowercase letters, digits and underscores only.")
     if not re.match(r"^[a-z0-9_]+$", args.schema):
         raise DeployError(f"--schema '{args.schema}' must be lowercase letters, digits and underscores only.")
+
+    if args.existing_app:
+        if args.app_name is not None and args.app_name != args.existing_app:
+            raise DeployError(
+                f"--app-name '{args.app_name}' and --existing-app '{args.existing_app}' name two "
+                f"different apps.\n"
+                f"  Pass only --existing-app {args.existing_app}."
+            )
+        args.app_name = args.existing_app
+    elif args.app_name is None:
+        args.app_name = DEFAULT_APP_NAME
+
     if not re.match(r"^[a-z0-9-]{2,30}$", args.app_name):
+        flag = "--existing-app" if args.existing_app else "--app-name"
         raise DeployError(
-            f"--app-name '{args.app_name}' must be 2-30 characters of lowercase letters, digits and hyphens.")
+            f"{flag} '{args.app_name}' must be 2-30 characters of lowercase letters, digits and hyphens.")
 
 
 def run(args):
@@ -2488,7 +2551,8 @@ def run(args):
     print(f"  Workspace : {api.host}")
     print(f"  Auth      : {api.auth_label}")
     print(f"  Target    : {args.catalog}.{args.schema}")
-    print(f"  App       : {args.app_name}")
+    print(f"  App       : {args.app_name}"
+          f"{' (existing, will not be deleted by --destroy)' if args.existing_app else ''}")
     print("=" * 72)
     print()
 
@@ -2535,7 +2599,8 @@ def run(args):
 
     app_url, app_ok = "", None
     if not args.skip_app:
-        app, sp = ensure_app(api, args.app_name, api.warehouse_id)
+        app, sp = ensure_app(api, args.app_name, api.warehouse_id,
+                             must_exist=bool(args.existing_app))
         grant_app_permissions(api, sp, catalog, args.schema, api.warehouse_id, genie_id, dashboard_id)
 
         src_path = f"/Workspace/Users/{user}/{args.app_name}"

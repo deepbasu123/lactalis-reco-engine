@@ -158,6 +158,27 @@ Sign-in is handled by the Databricks SDK, so a service principal configured for 
 (`DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET`) works too. The deployer prints which
 method it used in the `Auth` line of the banner.
 
+### Deploying onto an app you already created
+
+If your team has already created the Databricks App (even an empty hello-world one) and
+wants the demo to land in that app rather than a new one, name it with `--existing-app`:
+
+```bash
+python deploy.py --existing-app lactalis-recommend-engine
+```
+
+That flag changes three things:
+
+- The app **must already exist**. If the name is wrong the deployer stops instead of
+  quietly creating a second app under the typo.
+- Resources already bound to the app are **kept**. The deployer adds its own
+  `sql-warehouse` resource and leaves everything else alone.
+- `--destroy` **will not delete the app**, because the deployer did not create it. The
+  schema, job, Genie space and dashboard are still removed.
+
+Everything else is the same: the app's own service principal is granted what it needs, the
+source is uploaded, and the app is redeployed and verified over HTTP.
+
 ---
 
 ## What happens when you run it
@@ -299,6 +320,7 @@ on the Genie space, and `CAN_READ` on the dashboard.
 | `Could not reach https://...` | Check the workspace URL. If you are behind a corporate proxy, set it first: `set HTTPS_PROXY=http://proxy:port` (Windows) or `export HTTPS_PROXY=...` (macOS/Linux). |
 | `This workspace has no SQL warehouse` | Create one in **SQL** > **SQL Warehouses** > **Create SQL warehouse** (Serverless is recommended), then re-run. |
 | `Cannot create catalog ... no CREATE CATALOG` | Not a failure. The deployer falls back to a catalog you can write to and carries on. Pass `--catalog <name>` to choose. |
+| `No Databricks App named '...' exists in this workspace` | `--existing-app` only deploys onto an app that is already there. Check the spelling in **Compute** > **Apps**, or drop the flag to have the deployer create it. |
 | `Could not create the Genie space` | Genie is not enabled, or you cannot create spaces. Ask an admin, or use `--skip-genie` to deploy the rest. |
 | `No Foundation Model chat endpoint is available` | Pay-per-token model serving is not enabled in this workspace/region. Re-run with `--no-rationale`. |
 | `App deployment finished in state FAILED` | Open **Compute** > **Apps** > your app > **Logs** in the workspace. The runtime error is there. |
@@ -325,6 +347,9 @@ python deploy.py [options]
   --catalog NAME          Catalog to deploy into      (default: lactalis_catalog)
   --schema NAME           Schema to deploy into       (default: reco)
   --app-name NAME         Databricks App name         (default: lactalis-reco-engine)
+  --existing-app NAME     Deploy onto an app that already exists. Fails if it is not
+                          there, keeps resources already bound to it, and is left
+                          alone by --destroy.
   --warehouse-id ID       Specific SQL warehouse      (default: auto-pick serverless)
   --model NAME            Foundation Model endpoint   (default: best available)
   --as-of YYYY-MM-DD      Demo "today" driving the contextual signals (default: auto)
