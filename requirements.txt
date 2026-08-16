@@ -1,6 +1,10 @@
 # Lactalis B2B Personalized Recommendation Engine - deployer dependencies
 #
-#   pip install -r requirements.txt
+#   python -m pip install -r requirements.txt
+#
+# Use `python -m pip`, not a bare `pip`. On Windows a bare `pip` often fails with
+# "Fatal error in launcher: Unable to create process using ...python.exe..." because
+# pip.exe has a stale interpreter path baked in; going through `python -m` avoids it.
 #
 # Optional but recommended. deploy.py needs this only for authentication; everything
 # else uses the Python standard library. Without it the deployer still runs and falls

@@ -22,7 +22,7 @@ variables, service principals, or a personal access token.
 
 Requirements (optional, but the most reliable way to sign in):
 
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
 
     ...plus the Databricks CLI, which is a standalone program, not a pip package:
       Windows : winget install Databricks.DatabricksCLI
@@ -538,7 +538,7 @@ def _sdk_config(args):
         from databricks.sdk.core import Config  # type: ignore[import-not-found]
     except ImportError:
         return None, ("the databricks-sdk package is not installed "
-                      "(pip install databricks-sdk)")
+                      "(python -m pip install -r requirements.txt)")
 
     kwargs = {}
     if args.profile:

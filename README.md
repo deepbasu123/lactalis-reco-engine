@@ -33,10 +33,14 @@ dashboard, the app, and every permission the app needs. There are no manual foll
    entirely. It needs two things installed:
 
 ```
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-and the **Databricks CLI**, which is a standalone program, not a pip package:
+Use `python -m pip`, not a bare `pip`. On Windows a bare `pip` often fails with
+`Fatal error in launcher: Unable to create process...` because `pip.exe` has an old
+Python path baked into it. Going through `python -m` sidesteps that entirely.
+
+You also need the **Databricks CLI**, which is a standalone program, not a pip package:
 
 | Platform | Install |
 |---|---|
@@ -102,7 +106,7 @@ Install the Databricks tooling. Run this from the folder you extracted in Step 2
 restart Command Prompt so the CLI is on your PATH:
 
 ```
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 winget install Databricks.DatabricksCLI
 ```
 
@@ -160,7 +164,7 @@ Same thing, using `python3`:
 ```bash
 git clone https://github.com/<your-org>/lactalis-reco-engine.git
 cd lactalis-reco-engine
-pip3 install -r requirements.txt
+python3 -m pip install -r requirements.txt
 
 # The CLI is a standalone program, not a pip package
 brew install databricks/tap/databricks                                                    # macOS
@@ -343,7 +347,9 @@ on the Genie space, and `CAN_READ` on the dashboard.
 | What you see | What it means and what to do |
 |---|---|
 | `'python' is not recognized...` | Python is not on your PATH. Reinstall it and tick "Add python.exe to PATH", or use `py deploy.py` instead. |
-| **Anything returning HTTP 400 or 401 on every call** | Stop troubleshooting the individual step. The credentials are being refused. The fix that works nearly always: `pip install -r requirements.txt`, install the Databricks CLI (`winget install Databricks.DatabricksCLI` on Windows), then `databricks auth login --host <your-workspace-url>` and re-run `python deploy.py` with no `--host` or `--token`. |
+| **Anything returning HTTP 400 or 401 on every call** | Stop troubleshooting the individual step. The credentials are being refused. The fix that works nearly always: `python -m pip install -r requirements.txt`, install the Databricks CLI (`winget install Databricks.DatabricksCLI` on Windows), then `databricks auth login --host <your-workspace-url>` and re-run `python deploy.py` with no `--host` or `--token`. |
+| `Fatal error in launcher: Unable to create process using ...python.exe...` | Nothing to do with this project or with `requirements.txt`. `pip.exe` has a stale Python path baked into it, and the file it cannot find is `python.exe`. Run `python -m pip install -r requirements.txt` instead. To repair `pip` itself: `python -m pip install --upgrade --force-reinstall pip`. |
+| `Could not find platform independent libraries <prefix>` | A warning from a Python install that cannot locate its own standard library, usually a moved installation or a stale `PYTHONHOME`. Check with `echo %PYTHONHOME%`; if it is set and wrong, clear it. Reinstalling Python from python.org with "Add python.exe to PATH" ticked fixes it properly. |
 | `'databricks' is not recognized` | The Databricks CLI is not installed or not on your PATH. It is a standalone program, so `pip install databricks-cli` is **not** the right command (that installs the deprecated legacy CLI). Use `winget install Databricks.DatabricksCLI` on Windows, then restart Command Prompt. |
 | `Databricks rejected the credentials (401)` | The token is wrong, expired, or belongs to a different workspace. Sign in with `databricks auth login` instead, or generate a fresh token in the right workspace. |
 | `Databricks is refusing this token` / warehouse list returns HTTP 400 | The PAT is rejected on every call: it was created in a different workspace, or truncated/quoted on paste. A token only works in the workspace that issued it. `--user` and `--warehouse-id` will not fix this. Use `databricks auth login`. |
