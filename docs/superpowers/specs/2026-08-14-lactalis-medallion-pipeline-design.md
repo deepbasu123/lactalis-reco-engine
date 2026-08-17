@@ -7,13 +7,15 @@
 
 ## Purpose
 
-Add a scheduled Databricks Job that keeps the demo medallion and recommendation engine fresh twice a day, in the same one-command `deploy.py` style as the rest of this app (no Asset Bundle).
+Add a scheduled Databricks Job that keeps the demo medallion and recommendation engine fresh daily, in the same one-command `deploy.py` style as the rest of this app (no Asset Bundle).
+
+> Cadence note: this was designed and first shipped as twice daily (08:00 and 16:00). It was later cut to a single 08:00 run. The mutation parity was always keyed to the Brisbane calendar day, so nothing else in the design changes; the second run had only ever repeated the first run's state.
 
 Inspired by Quest’s scheduled scoring job (`0 0 */4 * * ?` in `databricks.yml`), adapted to Lactalis:
 
 | | Quest | Lactalis (this design) |
 |---|---|---|
-| Cadence | Every 4 hours UTC | Twice daily: 08:00 and 16:00 `Australia/Brisbane` |
+| Cadence | Every 4 hours UTC | Daily: 08:00 `Australia/Brisbane` |
 | Packaging | DAB (`databricks.yml`) | Jobs API upsert from `deploy.py` |
 | Work | Score system tables → Lakebase | Mutate bronze → promote silver/gold → reco + `ai_query` |
 | App read path | Lakebase / warehouse | Unchanged: gold + `vw_reco_full` via SQL warehouse |
@@ -21,7 +23,7 @@ Inspired by Quest’s scheduled scoring job (`0 0 */4 * * ?` in `databricks.yml`
 ## Goals
 
 1. Materialize real bronze (`bz_*`) and silver (`sv_*`) layers; gold keeps today’s app-facing names.
-2. Run a multi-task Job twice daily that mutates bronze enough for OOS / weather / fuel hero moments to visibly drift, then rebuilds gold + reco + FMAPI rationale.
+2. Run a multi-task Job daily that mutates bronze enough for OOS / weather / fuel hero moments to visibly drift, then rebuilds gold + reco + FMAPI rationale.
 3. Keep one-command deploy: `python deploy.py` still builds everything and registers the Job.
 4. No DAB, no app frontend changes, no live SAP/Salesforce ingest.
 
@@ -59,7 +61,7 @@ deploy_seed/*.csv
   Upsert Job "[Lactalis] Medallion Refresh" (UNPAUSED)
 ```
 
-### Scheduled path (twice daily)
+### Scheduled path (daily)
 
 ```
 mutate_bronze → promote_medallion → score_reco → write_rationale
@@ -110,9 +112,9 @@ Engine outputs stay as today: `reco_scored`, `reco_candidates`, `reco_rationale`
 
 ## Mutation rules
 
-Deterministic per **Brisbane calendar day** so both 08:00 and 16:00 runs on the same day produce the same bronze state (idempotent within the day), and the next day flips.
+Deterministic per **Brisbane calendar day**, so consecutive daily runs land on opposite sides of the flip and any repeat run within a day is idempotent.
 
-**Parity expression (required — do not use bare `current_date()`):** warehouse sessions default to UTC. The 08:00 Brisbane run is still the previous UTC calendar day, so a naive `current_date()` would flip parity between the two daily runs. Use:
+**Parity expression (required — do not use bare `current_date()`):** warehouse sessions default to UTC. The 08:00 Brisbane run is still the previous UTC calendar day, so a naive `current_date()` would key the flip to the wrong day and desync it from the Brisbane day the demo is narrated in. Use:
 
 ```sql
 datediff(date(from_utc_timestamp(current_timestamp(), 'Australia/Brisbane')), DATE'1970-01-01') % 2 AS parity
@@ -159,7 +161,7 @@ On the same `as_of` date, region **QLD** (every P&C customer in the seed is QLD)
 | Field | Value |
 |---|---|
 | Name | `[Lactalis] Medallion Refresh` |
-| Quartz cron | `0 0 8,16 * * ?` |
+| Quartz cron | `0 0 8 * * ?` |
 | Timezone | `Australia/Brisbane` |
 | Pause | `UNPAUSED` |
 | Concurrency | `max_concurrent_runs: 1` |
@@ -208,7 +210,7 @@ one-shot deployment always run byte-identical SQL:
 ## Error handling
 
 - `max_concurrent_runs: 1` so overlapping scheduled + manual/deploy runs queue instead of racing on `CREATE OR REPLACE` (Quest uses the same guard for its DELETE+re-INSERT notebook).
-- **Job vs. deployment race (found in live testing).** `max_concurrent_runs` only serialises the job against itself. A `deploy.py` run that straddles 08:00 or 16:00 rebuilds bronze with `CREATE OR REPLACE` while the job's `mutate_bronze` holds an `UPDATE` on the same tables, and Delta kills the deployment with `DELTA_CONCURRENT_APPEND.WHOLE_TABLE_READ`. `quiesce_pipeline_job()` therefore pauses the schedule and cancels in-flight runs before the rebuild, and the schedule is re-armed at the end (by the full-settings write in `ensure_pipeline_job`, or explicitly on the `--skip-job` path). A deployment that stops early leaves the schedule paused; the next run re-arms it.
+- **Job vs. deployment race (found in live testing).** `max_concurrent_runs` only serialises the job against itself. A `deploy.py` run that straddles 08:00 rebuilds bronze with `CREATE OR REPLACE` while the job's `mutate_bronze` holds an `UPDATE` on the same tables, and Delta kills the deployment with `DELTA_CONCURRENT_APPEND.WHOLE_TABLE_READ`. `quiesce_pipeline_job()` therefore pauses the schedule and cancels in-flight runs before the rebuild, and the schedule is re-armed at the end (by the full-settings write in `ensure_pipeline_job`, or explicitly on the `--skip-job` path). A deployment that stops early leaves the schedule paused; the next run re-arms it.
 - `write_rationale` keeps today’s behavior: on `ai_query` failure or blank rows, fall back to rule-based rationale so the app still has copy. Note: a warehouse SQL task cannot catch Python exceptions like `deploy.py`; the rationale SQL file should prefer a single `ai_query` statement, and deploy-time can still use the richer Python fallback. If FMAPI is unavailable in the Job run, document that the previous `reco_rationale` may remain until a successful run (or ship a second rule-based SQL file as an optional follow-up task later — YAGNI for v1 unless needed).
 - If `mutate_bronze` fails, downstream tasks do not run (`UPSTREAM_FAILED`).
 - Redeploy is idempotent: bronze reseed + promote + job upsert.
@@ -234,8 +236,8 @@ one-shot deployment always run byte-identical SQL:
 | Decision | Choice |
 |---|---|
 | Scope | Full medallion + reco + `ai_query` |
-| Cadence | Twice daily, not every 4 hours |
-| Schedule | 08:00 and 16:00 `Australia/Brisbane` |
+| Cadence | Daily, not every 4 hours |
+| Schedule | 08:00 `Australia/Brisbane` |
 | Packaging | Lactalis-style Jobs API from `deploy.py` (Approach 1) |
 | Bronze behavior | Mutate stock/signals each run (deterministic day parity) |
 | Pipeline shape | Multi-task Job, `sql_task.file` + workspace-uploaded `pipeline/*.sql` |

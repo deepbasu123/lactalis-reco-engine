@@ -230,7 +230,7 @@ the app container starting for the first time.
 | `data` | Creates the catalog/schema, lands 9 CSV seeds in bronze, promotes them to silver then gold |
 | `engine` | Scores recommendations, applies the out-of-stock guardrail, writes AI rationale |
 | `metrics` | Creates the governed metric views |
-| `pipeline` | Creates the twice-daily job that refreshes bronze to gold and re-runs the engine |
+| `pipeline` | Creates the daily job that refreshes bronze to gold and re-runs the engine |
 | `genie` | Creates the Genie space over the demo tables |
 | `dashboard` | Creates and publishes the AI/BI dashboard |
 | `app` | Creates the Databricks App, binds its SQL warehouse, uploads the code, deploys it |
@@ -290,23 +290,23 @@ space, dashboard and grants are updated in place rather than duplicated.
 |---|---|---|
 | Catalog | `lactalis_catalog` | Reused if it exists; see the permissions note below |
 | Schema | `reco` | Bronze (`bz_*`), silver (`sv_*`) and gold tables, the engine tables, and 6 views |
-| Job | `[Lactalis] Medallion Refresh` | Runs bronze to gold twice a day; see below |
+| Job | `[Lactalis] Medallion Refresh` | Runs bronze to gold once a day; see below |
 | Workspace folder | `<app-name>-pipeline` | The four SQL files that job runs |
 | Genie space | `Lactalis Recommendation Analytics` | Over 11 tables |
 | Dashboard | `Lactalis Recommendation Engine Performance` | Created and published |
 | Databricks App | `lactalis-reco-engine` | Node.js/React, runs as its own service principal |
 
-### The twice-daily refresh
+### The daily refresh
 
 The deployment leaves behind a Databricks Job that keeps the demo moving instead of frozen at
-whatever the deploy built. It runs at **08:00 and 16:00 Australia/Brisbane** as four chained
+whatever the deploy built. It runs at **08:00 Australia/Brisbane** as four chained
 SQL tasks: `mutate_bronze` → `promote_medallion` → `score_reco` → `write_rationale`.
 
 Each run nudges bronze (stock levels, weather, the fuel index), re-promotes bronze → silver →
 gold, re-scores every recommendation, and rewrites the `ai_query` rationale. The changes are
-deterministic from the Brisbane calendar day, so both of a day's runs agree and the story
-flips overnight: one day the weather is mild and one set of SKUs is out of stock, the next
-there is a heatwave, fuel is above average, and a different set is out of stock. See
+deterministic from the Brisbane calendar day, so the story flips overnight: one day the
+weather is mild and one set of SKUs is out of stock, the next there is a heatwave, fuel is
+above average, and a different set is out of stock. See
 [docs/architecture.md](docs/architecture.md) for the full table.
 
 Nothing about the app changes: it keeps reading the same gold tables and `vw_reco_full`.
@@ -397,7 +397,7 @@ python deploy.py [options]
   --skip-app              Build data, engine, Genie and dashboard but not the app
   --skip-genie            Do not create the Genie space
   --skip-dashboard        Do not create the dashboard
-  --skip-job              Do not create the twice-daily refresh job
+  --skip-job              Do not create the daily refresh job
   --no-rationale          Use rule-based rationale instead of calling a model
   --no-verify-app         Skip the live HTTP checks against the app
   --yes, -y               Never prompt; accept the deployer's choices

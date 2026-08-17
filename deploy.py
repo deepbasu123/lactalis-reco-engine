@@ -127,10 +127,10 @@ PRIMARY_KEYS = {
 DEFAULT_APP_NAME = "lactalis-reco-engine"
 
 # ---- scheduled refresh -------------------------------------------------------------
-# A Databricks Job walks bronze -> silver -> gold -> reco -> ai_query twice a day, so the
+# A Databricks Job walks bronze -> silver -> gold -> reco -> ai_query once a day, so the
 # demo keeps moving instead of being frozen at whatever deploy.py built.
 JOB_NAME_BASE = "[Lactalis] Medallion Refresh"
-JOB_CRON = "0 0 8,16 * * ?"          # 08:00 and 16:00, quartz
+JOB_CRON = "0 0 8 * * ?"             # 08:00 daily, quartz
 JOB_TIMEZONE = "Australia/Brisbane"  # the demo is AU-based; Brisbane has no DST
 
 
@@ -145,8 +145,9 @@ def job_name(app_name):
     return f"{JOB_NAME_BASE} ({app_name})"
 
 # Session time zone on a warehouse is UTC, and 08:00 Brisbane is still the previous UTC
-# day. Deriving the parity from a Brisbane-local date is what keeps both of a day's runs
-# on the same side of the flip.
+# day. Deriving the parity from a Brisbane-local date is what ties the flip to the
+# Brisbane calendar day the demo is narrated in, and it keeps any re-run on the same day
+# (a manual trigger, or a redeploy) landing on the same side of the flip.
 #
 # Counting days since the epoch rather than using dayofyear() matters: day-of-year 365
 # and day-of-year 1 are both odd, so a dayofyear parity would sit still over New Year in
@@ -1158,8 +1159,9 @@ def promote_statements(fq):
 def mutate_statements(fq, as_of):
     """Move the demo on between runs by editing bronze, never gold.
 
-    Parity is derived from the Brisbane calendar day, so the 08:00 and 16:00 runs agree
-    with each other and the story flips overnight.
+    Parity is derived from the Brisbane calendar day, so each daily run lands on the
+    opposite side of the flip from the one before and the story moves overnight. A second
+    run on the same day (manual trigger, redeploy) repeats it rather than undoing it.
     """
     def keys(pairs):
         return " OR ".join(f"(`dc_id` = {q(dc)} AND `product_id` = {q(sku)})"
@@ -1543,8 +1545,8 @@ def quiesce_pipeline_job(api, app_name):
     deploy.py rewrites bronze with CREATE OR REPLACE while the job's first task is
     UPDATE-ing the same tables. Delta rejects that with a concurrency conflict and the
     deployment dies half-built. Cancelling an in-flight run is not enough on its own: a
-    deployment easily straddles 08:00 or 16:00, and the next trigger would land in the
-    middle of it. So the schedule is paused for the duration and re-armed at the end.
+    deployment can straddle 08:00, and the next trigger would land in the middle of it.
+    So the schedule is paused for the duration and re-armed at the end.
 
     Returns the job id if it was paused here, so the caller knows to re-arm it. Never
     fatal: the worst case is a deployment that has to be re-run.
@@ -1591,7 +1593,7 @@ def _find_job(api, name):
 
 
 def ensure_pipeline_job(api, catalog, schema, user, model, as_of, use_ai, app_name):
-    """Create or update the twice-daily bronze-to-gold refresh job.
+    """Create or update the daily bronze-to-gold refresh job.
 
     Returns (job_id, sql_path). Never fatal: a workspace that will not let this user
     create jobs still gets a complete, working demo, just a static one.
@@ -2605,7 +2607,7 @@ def build_parser():
                    help="Demo 'as of' date driving the contextual signals (default: auto-detect from the seed data)")
     p.add_argument("--skip-app", action="store_true", help="Build the data, engine, Genie and dashboard but not the app")
     p.add_argument("--skip-job", action="store_true",
-                   help="Do not create the twice-daily bronze-to-gold refresh job")
+                   help="Do not create the daily bronze-to-gold refresh job")
     p.add_argument("--skip-genie", action="store_true", help="Do not create the Genie space")
     p.add_argument("--skip-dashboard", action="store_true", help="Do not create the AI/BI dashboard")
     p.add_argument("--no-rationale", action="store_true",
@@ -2742,7 +2744,7 @@ def run(args):
         print(f"                     {api.host}/dashboardsv3/{dashboard_id}/published")
     print(f"  Refresh job      : {job_id or '(skipped)'}")
     if job_id:
-        print(f"                     {JOB_CRON} {JOB_TIMEZONE} (08:00 and 16:00 daily)")
+        print(f"                     {JOB_CRON} {JOB_TIMEZONE} (08:00 daily)")
         print(f"                     {api.host}/jobs/{job_id}")
     print(f"  App              : {app_url or '(skipped)'}")
     print(f"  Data checks      : {'ALL PASSED' if data_ok else 'SOME FAILED (see above)'}")

@@ -36,8 +36,8 @@ Source systems (simulated, source-tagged)
 
 ## Scheduled refresh
 
-A Databricks Job, `[Lactalis] Medallion Refresh`, walks the whole medallion twice a day at
-**08:00 and 16:00 Australia/Brisbane** (`0 0 8,16 * * ?`). It is four chained SQL warehouse
+A Databricks Job, `[Lactalis] Medallion Refresh`, walks the whole medallion once a day at
+**08:00 Australia/Brisbane** (`0 0 8 * * ?`). It is four chained SQL warehouse
 tasks, capped at one concurrent run so two rebuilds never race:
 
 ```
@@ -52,7 +52,8 @@ mutate_bronze -> promote_medallion -> score_reco -> write_rationale
 | `write_rationale` | Rule-based copy first, then `ai_query` over the top, then `vw_reco_full` |
 
 The mutation is deterministic from the **Brisbane calendar day** (days since the epoch, mod 2),
-so the 08:00 and 16:00 runs agree with each other and the story flips every night:
+so each run lands on the opposite side from the one before and the story flips every night.
+Triggering the job twice in one day repeats that day's state rather than undoing it:
 
 | | quiet day | heatwave day |
 |---|---|---|
@@ -73,7 +74,7 @@ is generated from the same Python that the one-shot deployment runs, so the sche
 the deployment can never drift apart. `--skip-job` leaves the schedule out.
 
 Re-deploying pauses the schedule first and cancels any run already in flight, then re-arms it
-at the end. Without that, a deployment that straddles 08:00 or 16:00 rebuilds bronze with
+at the end. Without that, a deployment that straddles 08:00 rebuilds bronze with
 `CREATE OR REPLACE` while the job holds an `UPDATE` on the same tables, and Delta fails the
 whole thing with a concurrency conflict. If a deployment stops early the schedule is left
 paused; re-running `deploy.py` re-arms it.
