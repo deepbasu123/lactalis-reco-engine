@@ -144,6 +144,27 @@ def job_name(app_name):
     """
     return f"{JOB_NAME_BASE} ({app_name})"
 
+
+# The Genie space and dashboard are looked up by title/display name, which is the only
+# handle we control. A fixed title made a second deployment in the same workspace re-point
+# the first one's Genie/dashboard onto its own schema. Scope both by app_name, exactly as
+# job_name does for the refresh job. The default app name gives the original titles, so a
+# single default deployment reads unchanged.
+GENIE_TITLE_BASE = "Lactalis Recommendation Analytics"
+DASHBOARD_NAME_BASE = "Lactalis Recommendation Engine Performance"
+
+
+def genie_title(app_name):
+    if app_name == DEFAULT_APP_NAME:
+        return GENIE_TITLE_BASE
+    return f"{GENIE_TITLE_BASE} ({app_name})"
+
+
+def dashboard_name(app_name):
+    if app_name == DEFAULT_APP_NAME:
+        return DASHBOARD_NAME_BASE
+    return f"{DASHBOARD_NAME_BASE} ({app_name})"
+
 # Session time zone on a warehouse is UTC, and 08:00 Brisbane is still the previous UTC
 # day. Deriving the parity from a Brisbane-local date is what ties the flip to the
 # Brisbane calendar day the demo is narrated in, and it keeps any re-run on the same day
@@ -1726,9 +1747,9 @@ measures:
 
 # ---------------------------------------------------------------- step: Genie
 
-def build_genie(api, catalog, schema, user):
+def build_genie(api, catalog, schema, user, app_name):
     """Create (or re-point) the Genie space over the demo tables."""
-    title = "Lactalis Recommendation Analytics"
+    title = genie_title(app_name)
     description = ("B2B dairy upsell/cross-sell, segment behaviour and fulfilment analytics "
                    "for sales & marketing.")
 
@@ -1806,9 +1827,9 @@ def _find_genie_space(api, title):
 
 # ---------------------------------------------------------------- step: dashboard
 
-def build_dashboard(api, catalog, schema, user):
+def build_dashboard(api, catalog, schema, user, app_name):
     """Create + publish the Lakeview dashboard, repointed at this catalog/schema."""
-    name = "Lactalis Recommendation Engine Performance"
+    name = dashboard_name(app_name)
     if not os.path.exists(DASHBOARD_FILE):
         LOG.warn("dashboard", f"{DASHBOARD_FILE} not found; skipping the dashboard.")
         return ""
@@ -2438,10 +2459,6 @@ def _genie_ask(api, space_id, question="How many customers are in each segment?"
 
 # ---------------------------------------------------------------- teardown
 
-GENIE_TITLE = "Lactalis Recommendation Analytics"
-DASHBOARD_NAME = "Lactalis Recommendation Engine Performance"
-
-
 def _references_schema(api, path, field, marker):
     """True when an object's serialized definition mentions catalog.schema.
 
@@ -2499,7 +2516,8 @@ def destroy(api, args, user):
     # deployment must not lose the other one's objects.
     marker = f"{args.catalog}.{args.schema}."
 
-    genie_id = _find_genie_space(api, GENIE_TITLE)
+    gtitle = genie_title(args.app_name)
+    genie_id = _find_genie_space(api, gtitle)
     # The Genie GET omits serialized_space unless it is asked for, and a missing field would
     # read as "does not reference this schema" and silently spare a space that should go.
     if genie_id and not _references_schema(
@@ -2509,16 +2527,17 @@ def destroy(api, args, user):
                    f"{args.catalog}.{args.schema}.")
         genie_id = None
     if genie_id:
-        targets.append(("Genie space", f"{GENIE_TITLE} ({genie_id})"))
+        targets.append(("Genie space", f"{gtitle} ({genie_id})"))
 
-    dashboard_id = _find_dashboard(api, DASHBOARD_NAME)
+    dname = dashboard_name(args.app_name)
+    dashboard_id = _find_dashboard(api, dname)
     if dashboard_id and not _references_schema(api, f"/api/2.0/lakeview/dashboards/{dashboard_id}",
                                                "serialized_dashboard", marker):
         LOG.detail(f"Leaving dashboard {dashboard_id} alone: it does not reference "
                    f"{args.catalog}.{args.schema}.")
         dashboard_id = None
     if dashboard_id:
-        targets.append(("dashboard", f"{DASHBOARD_NAME} ({dashboard_id})"))
+        targets.append(("dashboard", f"{dname} ({dashboard_id})"))
 
     schema_fq = f"{args.catalog}.{args.schema}"
     try:
@@ -2694,10 +2713,10 @@ def run(args):
 
     # An object that was asked for but could not be built is a failure, not a skip, and the
     # summary and exit code have to tell those two apart.
-    genie_id = "" if args.skip_genie else build_genie(api, catalog, args.schema, user)
+    genie_id = "" if args.skip_genie else build_genie(api, catalog, args.schema, user, args.app_name)
     dashboard_id, dashboard_failed = "", False
     if not args.skip_dashboard:
-        dashboard_id = build_dashboard(api, catalog, args.schema, user)
+        dashboard_id = build_dashboard(api, catalog, args.schema, user, args.app_name)
         dashboard_failed = not dashboard_id
 
     data_ok = verify_data(api, catalog, args.schema)
