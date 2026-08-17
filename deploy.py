@@ -921,13 +921,15 @@ def resolve_catalog(api, requested, user, assume_yes=False):
 
     candidates = _writable_catalogs(api, catalogs, user)
     if not candidates:
+        visible = ", ".join(sorted(catalogs)) or "none"
         raise DeployError(
             f"Catalog '{requested}' does not exist, you cannot create it, and no existing\n"
             f"  catalog in this workspace grants you CREATE SCHEMA.\n"
-            f"  Ask a Unity Catalog admin for either:\n"
+            f"  Catalogs visible to you: {visible}\n"
+            f"  If you can write to one of those, re-run with --catalog <name> and the\n"
+            f"  deployer will use it. Otherwise ask a Unity Catalog admin for either:\n"
             f"    - CREATE CATALOG on the metastore, or\n"
-            f"    - CREATE SCHEMA + USE CATALOG on an existing catalog,\n"
-            f"  then re-run (add --catalog <name> if you were given an existing catalog)."
+            f"    - CREATE SCHEMA + USE CATALOG on an existing catalog."
         )
 
     if len(candidates) == 1 or assume_yes or not sys.stdin.isatty():
@@ -950,12 +952,19 @@ def resolve_catalog(api, requested, user, assume_yes=False):
 
 
 def _effective_privileges(api, securable_type, full_name, principal):
+    """Privileges the principal effectively holds, or None if we could not find out.
+
+    None and an empty set mean different things: the first is "the API would not tell
+    us", the second is "it told us there are none". Collapsing them makes a workspace
+    where this endpoint is unavailable look identical to one where the caller has no
+    access at all, which turns into a dead end for someone who could have deployed.
+    """
     path = (f"/api/2.1/unity-catalog/effective-permissions/{securable_type}/"
             f"{urllib.parse.quote(full_name)}?principal={urllib.parse.quote(principal)}")
     try:
         r = api.get(path)
     except ApiError:
-        return set()
+        return None
     privs = set()
     for assignment in r.get("privilege_assignments", []):
         for p in assignment.get("privileges", []):
@@ -968,8 +977,8 @@ def _effective_privileges(api, securable_type, full_name, principal):
 def _can_create_schema(api, catalog, user):
     privs = _effective_privileges(api, "catalog", catalog, user)
     if not privs:
-        # The effective-permissions API is unavailable or told us nothing useful.
-        # Assume yes and let the CREATE SCHEMA attempt be the real test.
+        # Unavailable, or reported nothing. Either way the CREATE SCHEMA attempt is a
+        # better test than refusing on the strength of an endpoint that can under-report.
         return True
     return bool(privs & {"ALL_PRIVILEGES", "CREATE_SCHEMA"})
 
@@ -987,7 +996,11 @@ def _writable_catalogs(api, catalogs, user):
         results = list(pool.map(
             lambda n: (n, _effective_privileges(api, "catalog", n, user)), names))
     for name, privs in results:
-        if privs & {"ALL_PRIVILEGES", "MANAGE"}:
+        if privs is None:
+            # Could not check. Worth offering last rather than ruling out, since the
+            # CREATE SCHEMA attempt will give a definitive answer either way.
+            rank = 2
+        elif privs & {"ALL_PRIVILEGES", "MANAGE"}:
             rank = 0
         elif "CREATE_SCHEMA" in privs:
             rank = 1
