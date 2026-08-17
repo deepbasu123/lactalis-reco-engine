@@ -898,7 +898,7 @@ def resolve_catalog(api, requested, user, assume_yes=False):
     workspaces do not hand out. Rather than dead-ending, fall back to a catalog the
     caller already has write access to.
     """
-    catalogs = {c["name"]: c for c in api.get("/api/2.1/unity-catalog/catalogs").get("catalogs", [])}
+    catalogs = {c["name"]: c for c in _list_catalogs(api)}
 
     if requested in catalogs:
         if _can_create_schema(api, requested, user):
@@ -949,6 +949,31 @@ def resolve_catalog(api, requested, user, assume_yes=False):
             print()
             return chosen
         print("  Enter one of the numbers listed above.")
+
+
+def _list_catalogs(api):
+    """Every catalog the caller can see, following pagination.
+
+    The endpoint may return a partial page whatever max_results says: an unset
+    next_page_token is the only reliable end-of-list signal. Reading one page can
+    therefore hide the very catalog the caller asked for and make it look missing.
+
+    Note this lists only catalogs the caller owns or holds USE_CATALOG on, unless they
+    are a metastore admin, so an empty result means "none visible to you", not "none
+    exist".
+    """
+    out, page_token, pages = [], None, 0
+    while pages < 50:
+        path = "/api/2.1/unity-catalog/catalogs"
+        if page_token:
+            path += f"?page_token={urllib.parse.quote(page_token)}"
+        r = api.get(path)
+        out.extend(r.get("catalogs", []) or [])
+        page_token = r.get("next_page_token")
+        pages += 1
+        if not page_token:
+            break
+    return out
 
 
 def _effective_privileges(api, securable_type, full_name, principal):
