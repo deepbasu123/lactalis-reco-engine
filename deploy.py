@@ -1778,13 +1778,27 @@ def build_genie(api, catalog, schema, user):
 
 
 def _find_genie_space(api, title):
+    """Look up a Genie space by title across every page.
+
+    This decides both whether to reuse a space and which one teardown removes, so
+    stopping at page one would create a duplicate on re-run and orphan the original.
+    """
+    page_token, pages = None, 0
     try:
-        spaces = api.get("/api/2.0/genie/spaces").get("spaces", [])
+        while pages < 50:
+            path = "/api/2.0/genie/spaces"
+            if page_token:
+                path += f"?page_token={urllib.parse.quote(page_token)}"
+            r = api.get(path)
+            for s in r.get("spaces", []) or []:
+                if s.get("title") == title:
+                    return s.get("space_id")
+            page_token = r.get("next_page_token")
+            pages += 1
+            if not page_token:
+                break
     except ApiError:
         return None
-    for s in spaces:
-        if s.get("title") == title:
-            return s.get("space_id")
     return None
 
 
@@ -2332,12 +2346,15 @@ def verify_backend(api, catalog, schema, sp, genie_space_id, dashboard_id=""):
     fq = f"{ident(catalog)}.{ident(schema)}"
     ok = True
 
-    cat_privs = _effective_privileges(api, "catalog", catalog, sp)
+    # None means the permissions endpoint would not answer, which is a reporting gap
+    # rather than a missing grant. Treat it as an empty set so a verification check
+    # cannot take down a deployment that has already finished every real step.
+    cat_privs = _effective_privileges(api, "catalog", catalog, sp) or set()
     ok = _report("service principal on catalog",
                  ", ".join(sorted(cat_privs)) or "none",
                  bool(cat_privs & {"USE_CATALOG", "ALL_PRIVILEGES"})) and ok
 
-    sch_privs = _effective_privileges(api, "schema", f"{catalog}.{schema}", sp)
+    sch_privs = _effective_privileges(api, "schema", f"{catalog}.{schema}", sp) or set()
     ok = _report("service principal on schema",
                  ", ".join(sorted(sch_privs)) or "none",
                  bool(sch_privs & {"ALL_PRIVILEGES"}) or
